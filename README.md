@@ -64,7 +64,7 @@ python3 -m http.server 5177
 
 Then open <http://localhost:5177>.
 
-There is also a preview config in `.claude/launch.json` that starts the same server.
+There is also a `launch.json` in the project root describing the same dev server.
 
 > Opening `index.html` directly from disk (`file://`) will **not** work, because the sketch runner needs a Service Worker.
 
