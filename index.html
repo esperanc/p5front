@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>p5front — projects</title>
+  <link rel="stylesheet" href="css/app.css?v=2" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1><span class="logo">p5front</span> &nbsp;·&nbsp; projects</h1>
+      <button id="new-btn" class="primary">New sketch</button>
+      <button id="import-btn">Import zip…</button>
+      <button id="theme-btn" class="ghost" title="Theme">🌓</button>
+      <input id="file-input" type="file" accept=".zip" hidden />
+    </div>
+
+    <div id="dropzone" class="dropzone">
+      Drop a <strong>.zip</strong> exported from the p5 Web Editor or OpenProcessing here to import it.
+    </div>
+
+    <div id="list" class="grid"></div>
+  </div>
+
+  <script src="js/util.js?v=2"></script>
+  <script src="js/storage.js?v=2"></script>
+  <script src="js/formats.js?v=2"></script>
+  <script>
+    const listEl   = document.getElementById('list');
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+
+    function renderList() {
+      const projects = listProjects();
+      if (projects.length === 0) {
+        listEl.innerHTML = '<div class="empty">No projects yet. Create one or import a zip.</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      for (const p of projects) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <button class="del ghost" title="Delete">✕</button>
+          <div class="name">${escapeHtml(p.name || p.id)}</div>
+          <div class="meta">
+            ${p.origin && p.origin !== 'native' ? `<span class="badge">${escapeHtml(p.origin)}</span>` : ''}
+            <span>${timeAgo(p.lastModified)}</span>
+          </div>`;
+        card.querySelector('.name').onclick = () => location.href = `ide.html?id=${encodeURIComponent(p.id)}`;
+        card.querySelector('.del').onclick = (e) => {
+          e.stopPropagation();
+          if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
+            removeRegistryEntry(p.id);
+            renderList();
+          }
+        };
+        listEl.appendChild(card);
+      }
+    }
+
+    async function importBlob(blob, filename) {
+      try {
+        const { files, name, origin, warnings } = await importArchive(blob, filename);
+        const { id, name: finalName } = await resolveCollision(name, files);
+        await putProject(id, files);
+        upsertRegistryEntry(id, { name: finalName, origin });
+        if (warnings.length) console.warn('Import warnings:', warnings);
+        location.href = `ide.html?id=${encodeURIComponent(id)}`;
+      } catch (e) {
+        alert('Import failed: ' + e.message);
+        console.error(e);
+      }
+    }
+
+    document.getElementById('theme-btn').onclick = cycleTheme;
+
+    document.getElementById('new-btn').onclick = () =>
+      location.href = `ide.html?id=${generateProjectName()}&new=1`;
+
+    document.getElementById('import-btn').onclick = () => fileInput.click();
+    fileInput.onchange = (e) => {
+      const f = e.target.files[0];
+      if (f) importBlob(f, f.name);
+      fileInput.value = '';
+    };
+
+    ['dragenter', 'dragover'].forEach(ev =>
+      dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+    dropzone.addEventListener('drop', e => {
+      const f = e.dataTransfer.files[0];
+      if (f && f.name.toLowerCase().endsWith('.zip')) importBlob(f, f.name);
+      else if (f) alert('Please drop a .zip file.');
+    });
+
+    renderList();
+  </script>
+</body>
+</html>
