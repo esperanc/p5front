@@ -19,6 +19,7 @@ p5front can **import and export project zips** from the [p5.js Web Editor](https
 - 🧑‍💻 **Ace editor** with per-language syntax highlighting, **per-file undo history & cursor position**, and a modern **linter** (Acorn — understands ES2022+ like static/private class fields).
 - 🖼️ **View mode** — open a sketch full-window in a separate tab, with a collapsible console.
 - 🔗 **Share via URL** — the whole project is compressed into a link (unreferenced assets are stripped to keep it small).
+- 🗄️ **Export / import all projects** — download every project as a single zip that unzips into a **directly hostable, runnable repository** (one folder per project + an auto-generated gallery); re-import it anywhere.
 - 🎛️ **Preferences** — theme (auto / light / dark), editor font family & size, tab size, soft tabs, word wrap, show invisibles, syntax checking.
 - 🧩 **Resizable, collapsible panels** and a drag-and-drop file sidebar.
 - 🚀 **Static deploy** — works from any static host, including GitHub Pages.
@@ -101,6 +102,26 @@ Notes:
 
 Both editors reference **p5.js v2 from a CDN** in their `index.html`, and p5front keeps it that way — so an imported sketch runs exactly as it did in its original editor.
 
+### Export / import all projects (backup)
+
+Storage is per-browser and per-origin, so the **Projects** dialog has **Export all** and **Import…** to back everything up or move it between machines.
+
+**Export all** downloads a single zip that unzips into a runnable static repository:
+
+```
+p5front-export-2026-07-25/
+├── index.html          # auto-generated gallery linking to each project
+├── p5front.json        # p5front metadata (auxiliary)
+├── Bauhaus Grid/       # one folder per project (folder name = project name)
+│   ├── index.html
+│   └── …
+└── …
+```
+
+Each project folder is self-contained, so you can **host the unzipped folder on any static server** (e.g. GitHub Pages) and every sketch runs directly — no p5front and no Service Worker needed. `p5front.json` is only used to restore projects faithfully on re-import; the folders run without it.
+
+**Import…** reads such a zip back in. `p5front.json` is **optional**: any zip of projects works, where a project is any folder that directly contains an `index.html`. This covers folders at the top level, folders inside a wrapping container folder, and a single project at the archive root. Without a manifest, each project's name comes from its folder. When a project already exists, you choose once how to resolve it: keep both (import as copies), overwrite, or skip.
+
 ---
 
 ## Editor & p5.js v2 notes
@@ -125,7 +146,6 @@ Both editors reference **p5.js v2 from a CDN** in their `index.html`, and p5fron
 ```
 p5front/
 ├── index.html        # The editor (sidebar, Ace, preview, console) — the app entry point
-├── ide.html          # Redirect to index.html (keeps legacy ?id= / ?share= links working)
 ├── view.html         # Full-window "view mode" runner
 ├── sw.js             # Service Worker — virtual filesystem for the runner
 ├── css/
@@ -135,6 +155,7 @@ p5front/
     ├── storage.js    # IndexedDB + registry + the canonical file model
     ├── formats.js    # Import/export adapters, default project template
     ├── share.js      # URL sharing (LZString compression)
+    ├── backup.js     # Export/import all projects as a runnable repository
     ├── settings.js   # Editor preferences
     └── ide_ui.js     # Editor wiring: file tree, run/stop, panels, linter
 ```

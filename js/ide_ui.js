@@ -649,6 +649,24 @@ function wireControls() {
     };
     $('projects-overlay').onclick = (e) => { if (e.target === $('projects-overlay')) closeProjectsModal(); };
 
+    // Export / import all projects (see backup.js)
+    $('export-all').onclick = () => exportProjects();
+    $('import-all').onclick = () => $('import-all-input').click();
+    $('import-all-input').onchange = async (e) => {
+        const f = e.target.files[0];
+        e.target.value = '';
+        if (!f) return;
+        try {
+            const res = await importProjects(f, f.name);
+            if (res && res.cancelled) return;
+            renderProjectsModal();
+            alert(`Import complete — ${res.imported} new, ${res.copied} copied, ` +
+                  `${res.overwritten} overwritten, ${res.skipped} skipped.`);
+        } catch (err) {
+            alert('Import failed: ' + err.message);
+        }
+    };
+
     $('upload-file').onclick = () => $('upload-input').click();
     $('upload-input').onchange = (e) => { uploadFiles(e.target.files); e.target.value = ''; };
 

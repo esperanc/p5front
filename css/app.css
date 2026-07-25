@@ -258,6 +258,7 @@ body.ide { overflow: hidden; }
 .proj-meta { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
 .proj-del { flex-shrink: 0; padding: 2px 7px; }
 .proj-empty { color: var(--text-soft); padding: 16px; text-align: center; }
+.modal-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 
 /* Preferences modal */
 .modal-dialog.settings { width: 400px; }

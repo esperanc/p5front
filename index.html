@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>p5front</title>
-  <link rel="stylesheet" href="css/app.css?v=3" />
+  <link rel="stylesheet" href="css/app.css?v=4" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
 </head>
@@ -79,6 +79,11 @@
         <button id="close-projects" class="ghost" title="Close">✕</button>
       </div>
       <ul id="modal-project-list" class="modal-list"></ul>
+      <div class="modal-foot">
+        <button id="export-all" title="Download all projects as a runnable repository">⬇ Export all</button>
+        <button id="import-all" title="Import projects from an export">⬆ Import…</button>
+        <input id="import-all-input" type="file" accept=".zip" hidden />
+      </div>
     </div>
   </div>
 
@@ -147,6 +152,7 @@
   <script src="js/formats.js?v=2"></script>
   <script src="js/share.js?v=3"></script>
   <script src="js/settings.js?v=4"></script>
-  <script src="js/ide_ui.js?v=6"></script>
+  <script src="js/backup.js?v=4"></script>
+  <script src="js/ide_ui.js?v=8"></script>
 </body>
 </html>
