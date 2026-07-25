@@ -68,6 +68,33 @@ button.ghost:hover { background: var(--bg-soft); }
 
 a { color: var(--accept); }
 
+/* Scrollbars — transparent track + muted thumb, low-contrast in both themes.
+   Firefox reads scrollbar-color on the real element (var() works there). WebKit
+   pseudo-elements don't reliably resolve var(), so the thumb uses explicit,
+   theme-specific colors. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;    /* Firefox: thumb, track */
+}
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: #c4cad3;                      /* light theme */
+  border-radius: 8px;
+  border: 3px solid transparent;                 /* inset padding, shows the transparent track */
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #a9b0bb; }
+
+/* Dark theme (system dark unless forced light, or explicit dark) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background-color: #3a414f; }
+  :root:not([data-theme="light"]) ::-webkit-scrollbar-thumb:hover { background-color: #4d5563; }
+}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb { background-color: #3a414f; }
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background-color: #4d5563; }
+
 /* ---- landing ---- */
 .wrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
 .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
