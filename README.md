@@ -192,4 +192,9 @@ A modern browser with **Service Worker** and **IndexedDB** support (all current 
 
 ## License
 
-_TODO: add a license (e.g. MIT)._
+p5front is released under a **noncommercial license** (see [LICENSE](LICENSE)).
+Academic, research, educational and other noncommercial use is free, provided the
+license file is kept intact. **Commercial use requires prior written permission** —
+contact <claudio.esperanca@gmail.com>.
+
+Copyright © 2026 Claudio Esperança.
