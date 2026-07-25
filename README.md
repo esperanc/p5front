@@ -4,7 +4,9 @@ A browser-based IDE for creative coding in **JavaScript** with **[p5.js](https:/
 
 p5front can **import and export project zips** from the [p5.js Web Editor](https://editor.p5js.org) and [OpenProcessing](https://openprocessing.org), so you can move sketches in and out of those tools freely. It is designed to be deployed as **static files** (e.g. GitHub Pages).
 
-> Inspired by **Py5Script** — a similar IDE for Python + p5.js via PyScript. p5front is its JavaScript counterpart.
+**▶ Live demo: <https://esperanc.github.io/p5front/>**
+
+> Inspired by **Py5Script** ([repo](https://github.com/esperanc/Py5Script) · [live](https://esperanc.github.io/Py5Script/)) — a similar IDE for Python + p5.js via PyScript. p5front is its JavaScript counterpart.
 
 ---
 
@@ -12,7 +14,7 @@ p5front can **import and export project zips** from the [p5.js Web Editor](https
 
 - 🎨 **Write & run p5.js v2 sketches** entirely in the browser, with live preview.
 - 📦 **Import / export zips** compatible with the p5.js Web Editor and OpenProcessing — a single, format-agnostic adapter (any folder with an `index.html` at its root works).
-- 💾 **Local project storage** — files live in IndexedDB, project metadata in `localStorage`. Nothing leaves your machine.
+- 💾 **Local project storage** — files live in IndexedDB, project metadata in `localStorage`. Nothing leaves your machine. Opens the project you were last editing (or a fresh one on first visit); switch or create projects from the **Projects** dialog.
 - 🗂️ **Multi-file projects** with subfolders (JS, CSS, HTML, GLSL shaders, images, fonts, JSON, …).
 - 🧑‍💻 **Ace editor** with per-language syntax highlighting, **per-file undo history & cursor position**, and a modern **linter** (Acorn — understands ES2022+ like static/private class fields).
 - 🖼️ **View mode** — open a sketch full-window in a separate tab, with a collapsible console.
@@ -72,9 +74,9 @@ There is also a `launch.json` in the project root describing the same dev server
 
 ## Deploying to GitHub Pages
 
-p5front is entirely static, so deployment is just publishing the files:
+p5front is entirely static, so deployment is just publishing the files. This project is deployed at **<https://esperanc.github.io/p5front/>** ([repository](https://github.com/esperanc/p5front)). To host your own copy:
 
-1. Push this repository to GitHub.
+1. Push the repository to GitHub.
 2. In **Settings → Pages**, serve from your branch (root).
 3. Visit `https://<user>.github.io/<repo>/`.
 
@@ -89,7 +91,7 @@ Notes:
 
 ### Import
 
-- Drag a `.zip` onto the projects page (or the file sidebar in the editor), or use **Import**.
+- Drag a `.zip` onto the editor's file sidebar, or use **Import**.
 - Supported: exports from the **p5.js Web Editor** and **OpenProcessing**, plus any zip that contains an `index.html` at its root.
 - If a zip has no `index.html`, p5front synthesizes a minimal one (loading p5.js from a CDN plus the JavaScript/CSS it finds) so the project still runs.
 
@@ -122,8 +124,8 @@ Both editors reference **p5.js v2 from a CDN** in their `index.html`, and p5fron
 
 ```
 p5front/
-├── index.html        # Landing page: project list + import
-├── ide.html          # The editor (sidebar, Ace, preview, console)
+├── index.html        # The editor (sidebar, Ace, preview, console) — the app entry point
+├── ide.html          # Redirect to index.html (keeps legacy ?id= / ?share= links working)
 ├── view.html         # Full-window "view mode" runner
 ├── sw.js             # Service Worker — virtual filesystem for the runner
 ├── css/

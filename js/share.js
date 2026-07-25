@@ -39,6 +39,6 @@ function decodeShare(param) {
 // Build a full share URL that opens the IDE with the embedded project.
 function buildShareURL(files, name, opts) {
     const share = encodeShare(files, opts);
-    const base  = location.origin + location.pathname.replace(/[^/]*$/, 'ide.html');
+    const base  = location.origin + location.pathname;   // the current app page (index.html)
     return `${base}?share=${share}&name=${encodeURIComponent(name || 'Shared Sketch')}`;
 }

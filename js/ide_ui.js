@@ -4,6 +4,7 @@
 // =============================================================================
 
 // ---- state ----
+const LS_LAST_PROJECT = 'p5front_last_project';
 let projectId    = null;
 let projectName  = 'Untitled';
 let projectFiles = {};
@@ -312,7 +313,7 @@ async function importZip(blob, filename) {
         await putProject(id, files);
         upsertRegistryEntry(id, { name: finalName, origin });
         if (warnings.length) console.warn('Import warnings:', warnings);
-        location.href = `ide.html?id=${encodeURIComponent(id)}`;
+        location.href = `?id=${encodeURIComponent(id)}`;
     } catch (e) {
         alert('Import failed: ' + e.message);
     }
@@ -370,7 +371,7 @@ function renderProjectsModal() {
              <button class="proj-del ghost" title="Delete project">🗑</button>`;
         li.querySelector('.proj-info').onclick = () => {
             if (p.id === projectId) { closeProjectsModal(); return; }
-            location.href = `ide.html?id=${encodeURIComponent(p.id)}`;
+            location.href = `?id=${encodeURIComponent(p.id)}`;
         };
         li.querySelector('.proj-del').onclick = (e) => {
             e.stopPropagation();
@@ -384,7 +385,7 @@ function renderProjectsModal() {
 }
 
 function newProject() {
-    location.href = `ide.html?id=${generateProjectName()}&new=1`;
+    location.href = `?id=${encodeURIComponent(generateProjectName())}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -562,16 +563,28 @@ async function init() {
                 await putProject(id, map);
                 upsertRegistryEntry(id, { name: finalName, origin: 'shared' });
             }
-            location.replace(`ide.html?id=${encodeURIComponent(id)}`);
+            location.replace(`?id=${encodeURIComponent(id)}`);
         } else {
             alert('This share link is invalid or corrupted.');
-            location.replace('index.html');
+            location.replace(location.pathname);
         }
         return;
     }
 
     projectId = params.get('id');
-    if (!projectId) { location.href = 'index.html'; return; }
+    if (!projectId) {
+        // No project specified: reopen the last one edited, else the most recent,
+        // else start a fresh project (first visit).
+        const reg0 = getRegistry();
+        const last = localStorage.getItem(LS_LAST_PROJECT);
+        let target = (last && reg0[last]) ? last : null;
+        if (!target) {
+            const projs = listProjects();
+            target = projs.length ? projs[0].id : generateProjectName();
+        }
+        location.replace(`?id=${encodeURIComponent(target)}`);
+        return;
+    }
 
     const rec = await getProject(projectId);
     if (rec && rec.files && Object.keys(rec.files).length) {
@@ -586,6 +599,8 @@ async function init() {
     const reg = getRegistry();
     projectName = (reg[projectId] && reg[projectId].name) || prettify(projectId);
     pnameEl.value = projectName;
+
+    localStorage.setItem(LS_LAST_PROJECT, projectId);   // remember for the next no-id visit
 
     currentFile = pickMainSketch();
     openFile(currentFile);

@@ -3,101 +3,150 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>p5front — projects</title>
-  <link rel="stylesheet" href="css/app.css?v=2" />
+  <title>p5front</title>
+  <link rel="stylesheet" href="css/app.css?v=3" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
 </head>
-<body>
-  <div class="wrap">
-    <div class="topbar">
-      <h1><span class="logo">p5front</span> &nbsp;·&nbsp; projects</h1>
-      <button id="new-btn" class="primary">New sketch</button>
-      <button id="import-btn">Import zip…</button>
-      <button id="theme-btn" class="ghost" title="Theme">🌓</button>
+<body class="ide">
+  <div class="ide-grid">
+    <div class="ide-head">
+      <button id="projects-btn" class="ghost icon" title="Open a project">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+      </button>
+      <a class="logo" href="https://github.com/esperanc/p5front" target="_blank" rel="noopener" title="p5front on GitHub">p5front</a>
+      <input id="pname" class="pname" title="Project name" />
+      <span class="spacer"></span>
+      <button id="run-btn" class="primary">▶ Run</button>
+      <button id="stop-btn">■ Stop</button>
+      <button id="view-btn" title="Open in a new window (view mode)">⧉ View</button>
+      <button id="share-btn" title="Copy a share link">Share</button>
+      <button id="import-btn">Import…</button>
+      <button id="export-btn">Export zip</button>
+      <button id="settings-btn" class="ghost icon" title="Preferences">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
       <input id="file-input" type="file" accept=".zip" hidden />
     </div>
 
-    <div id="dropzone" class="dropzone">
-      Drop a <strong>.zip</strong> exported from the p5 Web Editor or OpenProcessing here to import it.
+    <div class="ide-side">
+      <div class="side-title">
+        Files <span class="spacer"></span>
+        <button id="add-file" title="New file">＋</button>
+        <button id="upload-file" title="Upload files">⤒</button>
+        <input id="upload-input" type="file" multiple hidden />
+      </div>
+      <div id="filetree" class="filetree"></div>
     </div>
 
-    <div id="list" class="grid"></div>
+    <div id="rz1" class="resizer v rz1" title="Resize file list"></div>
+
+    <div class="ide-editor">
+      <div class="editor-topbar">
+        <button id="toggle-side" class="ghost icon" title="Toggle file list">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+        </button>
+        <span id="current-file-label" class="current-file"></span>
+      </div>
+      <div id="ace-editor"></div>
+    </div>
+
+    <div id="rz2" class="resizer v rz2" title="Resize editor / preview"></div>
+
+    <div class="ide-preview">
+      <div class="preview-frame">
+        <!-- allow-same-origin is required so the Service Worker controls this frame
+             and serves the project's files from IndexedDB. -->
+        <iframe id="runner"
+                sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-modals allow-popups allow-forms"></iframe>
+        <div id="preview-placeholder" class="preview-placeholder">
+          Press <strong>&nbsp;▶ Run&nbsp;</strong> to execute the sketch.
+        </div>
+      </div>
+      <div id="rz3" class="resizer h rz3" title="Resize console"></div>
+      <div id="console" class="console"></div>
+    </div>
   </div>
 
+  <!-- Projects modal -->
+  <div id="projects-overlay" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <strong>Projects</strong>
+        <span class="spacer"></span>
+        <button id="sort-toggle" title="Toggle sort order">Sort: Date</button>
+        <button id="modal-new" class="primary">New</button>
+        <button id="close-projects" class="ghost" title="Close">✕</button>
+      </div>
+      <ul id="modal-project-list" class="modal-list"></ul>
+    </div>
+  </div>
+
+  <!-- Preferences modal -->
+  <div id="settings-overlay" class="modal-overlay">
+    <div class="modal-dialog settings">
+      <div class="modal-head">
+        <strong>Preferences</strong>
+        <span class="spacer"></span>
+        <button id="close-settings" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-row">
+          <label for="set-theme">Theme</label>
+          <select id="set-theme">
+            <option value="auto">Auto (system)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <label for="set-font-family">Editor font</label>
+          <select id="set-font-family">
+            <option value="mono">System mono</option>
+            <option value="menlo">Menlo</option>
+            <option value="monaco">Monaco</option>
+            <option value="consolas">Consolas</option>
+            <option value="sfmono">SF Mono</option>
+            <option value="courier">Courier New</option>
+            <option value="jetbrains">JetBrains Mono</option>
+            <option value="fira">Fira Code</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <label for="set-font-size">Font size (px)</label>
+          <input id="set-font-size" type="number" min="9" max="40" step="1" />
+        </div>
+        <div class="settings-row">
+          <label for="set-tab-size">Tab size</label>
+          <input id="set-tab-size" type="number" min="1" max="8" step="1" />
+        </div>
+        <div class="settings-row">
+          <label for="set-soft-tabs">Soft tabs (spaces)</label>
+          <input id="set-soft-tabs" type="checkbox" />
+        </div>
+        <div class="settings-row">
+          <label for="set-wrap">Word wrap</label>
+          <input id="set-wrap" type="checkbox" />
+        </div>
+        <div class="settings-row">
+          <label for="set-invisibles">Show invisibles</label>
+          <input id="set-invisibles" type="checkbox" />
+        </div>
+        <div class="settings-row">
+          <label for="set-lint">Check JS syntax</label>
+          <input id="set-lint" type="checkbox" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"></script>
   <script src="js/util.js?v=2"></script>
   <script src="js/storage.js?v=2"></script>
   <script src="js/formats.js?v=2"></script>
-  <script>
-    const listEl   = document.getElementById('list');
-    const dropzone = document.getElementById('dropzone');
-    const fileInput = document.getElementById('file-input');
-
-    function renderList() {
-      const projects = listProjects();
-      if (projects.length === 0) {
-        listEl.innerHTML = '<div class="empty">No projects yet. Create one or import a zip.</div>';
-        return;
-      }
-      listEl.innerHTML = '';
-      for (const p of projects) {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-          <button class="del ghost" title="Delete">✕</button>
-          <div class="name">${escapeHtml(p.name || p.id)}</div>
-          <div class="meta">
-            ${p.origin && p.origin !== 'native' ? `<span class="badge">${escapeHtml(p.origin)}</span>` : ''}
-            <span>${timeAgo(p.lastModified)}</span>
-          </div>`;
-        card.querySelector('.name').onclick = () => location.href = `ide.html?id=${encodeURIComponent(p.id)}`;
-        card.querySelector('.del').onclick = (e) => {
-          e.stopPropagation();
-          if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
-            removeRegistryEntry(p.id);
-            renderList();
-          }
-        };
-        listEl.appendChild(card);
-      }
-    }
-
-    async function importBlob(blob, filename) {
-      try {
-        const { files, name, origin, warnings } = await importArchive(blob, filename);
-        const { id, name: finalName } = await resolveCollision(name, files);
-        await putProject(id, files);
-        upsertRegistryEntry(id, { name: finalName, origin });
-        if (warnings.length) console.warn('Import warnings:', warnings);
-        location.href = `ide.html?id=${encodeURIComponent(id)}`;
-      } catch (e) {
-        alert('Import failed: ' + e.message);
-        console.error(e);
-      }
-    }
-
-    document.getElementById('theme-btn').onclick = cycleTheme;
-
-    document.getElementById('new-btn').onclick = () =>
-      location.href = `ide.html?id=${generateProjectName()}&new=1`;
-
-    document.getElementById('import-btn').onclick = () => fileInput.click();
-    fileInput.onchange = (e) => {
-      const f = e.target.files[0];
-      if (f) importBlob(f, f.name);
-      fileInput.value = '';
-    };
-
-    ['dragenter', 'dragover'].forEach(ev =>
-      dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
-    ['dragleave', 'drop'].forEach(ev =>
-      dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
-    dropzone.addEventListener('drop', e => {
-      const f = e.dataTransfer.files[0];
-      if (f && f.name.toLowerCase().endsWith('.zip')) importBlob(f, f.name);
-      else if (f) alert('Please drop a .zip file.');
-    });
-
-    renderList();
-  </script>
+  <script src="js/share.js?v=3"></script>
+  <script src="js/settings.js?v=4"></script>
+  <script src="js/ide_ui.js?v=6"></script>
 </body>
 </html>
