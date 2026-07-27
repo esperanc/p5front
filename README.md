@@ -128,6 +128,7 @@ Each project folder is self-contained, so you can **host the unzipped folder on 
 
 - The Ace linter is **Acorn-based** and reports real syntax errors only — it won't false-flag modern syntax (static class fields, private `#fields`, `??`, optional chaining, etc.). Toggle it in **Preferences → Check JS syntax**.
 - Each open file keeps its own **undo history, cursor and scroll position**.
+- **Script order is auto-repaired.** Some multi-file exports (notably a few from OpenProcessing) list their `<script>` tags in an order that doesn't match dependency order — a symbol defined at the top level of one file is used at the top level of another that loads first (e.g. `class B extends A` with `A` loaded later). p5front analyses the local scripts and reorders them by dependency on load, so these sketches run without manual fixing.
 - **p5.js 2.0 removed `preload()`.** Load assets inside an `async setup()` instead:
 
   ```js

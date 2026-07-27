@@ -596,6 +596,16 @@ async function init() {
         upsertRegistryEntry(projectId, { name: prettify(projectId), origin: 'native' });
     }
 
+    // Repair broken <script> ordering (e.g. some OpenProcessing exports) once, up
+    // front — before any editor session is created from these files.
+    if (typeof reorderScriptsByDependency === 'function' && projectFiles['index.html']) {
+        const fixed = reorderScriptsByDependency(projectFiles);
+        if (fixed && fixed !== projectFiles['index.html']) {
+            projectFiles['index.html'] = fixed;
+            try { await putProject(projectId, projectFiles); } catch (e) { console.warn('reorder save failed', e); }
+        }
+    }
+
     const reg = getRegistry();
     projectName = (reg[projectId] && reg[projectId].name) || prettify(projectId);
     pnameEl.value = projectName;
