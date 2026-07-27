@@ -368,11 +368,15 @@ function renderProjectsModal() {
                <div class="proj-name">${escapeHtml(p.name || p.id)}</div>
                <div class="proj-meta">${p.origin && p.origin !== 'native' ? escapeHtml(p.origin) + ' · ' : ''}${timeAgo(p.lastModified)}</div>
              </div>
+             <button class="proj-dup ghost icon" title="Duplicate project">
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+             </button>
              <button class="proj-del ghost" title="Delete project">🗑</button>`;
         li.querySelector('.proj-info').onclick = () => {
             if (p.id === projectId) { closeProjectsModal(); return; }
             location.href = `?id=${encodeURIComponent(p.id)}`;
         };
+        li.querySelector('.proj-dup').onclick = (e) => { e.stopPropagation(); duplicateProject(p.id); };
         li.querySelector('.proj-del').onclick = (e) => {
             e.stopPropagation();
             if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
@@ -386,6 +390,26 @@ function renderProjectsModal() {
 
 function newProject() {
     location.href = `?id=${encodeURIComponent(generateProjectName())}`;
+}
+
+// Duplicate an existing project into a fresh copy and open it.
+async function duplicateProject(id) {
+    let rec;
+    try { rec = await getProject(id); } catch (e) { alert('Could not read project: ' + e.message); return; }
+    if (!rec || !rec.files) { alert('Project has no data to duplicate.'); return; }
+
+    const reg     = getRegistry();
+    const srcName = (reg[id] && reg[id].name) || id;
+    const origin  = (reg[id] && reg[id].origin) || 'native';
+
+    // Find a free "<name> copy" id (always a new copy, never reusing an existing one).
+    const baseName = `${srcName} copy`;
+    let name = baseName, newId = slugify(baseName) || ('project-' + Date.now()), n = 2;
+    while (getRegistry()[newId]) { name = `${baseName} ${n}`; newId = slugify(name) || `${newId}-${n}`; n++; }
+
+    await putProject(newId, { ...rec.files });
+    upsertRegistryEntry(newId, { name, origin });
+    location.href = `?id=${encodeURIComponent(newId)}`;
 }
 
 // -----------------------------------------------------------------------------
