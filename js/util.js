@@ -55,6 +55,18 @@ function effectiveTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+// Logo variant chosen once per page load (1..3); the light/dark image for this
+// variant is picked to match the effective theme.
+const LOGO_N = 1 + Math.floor(Math.random() * 3);
+
+function updateLogo() {
+    const img = document.getElementById('logo-img');
+    if (!img) return;
+    img.src = effectiveTheme() === 'dark'
+        ? `logo/darklogo${LOGO_N}.png`
+        : `logo/lightLogo${LOGO_N}.png`;
+}
+
 function applyTheme(theme) {
     if (theme === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
@@ -62,6 +74,8 @@ function applyTheme(theme) {
     if (typeof editor !== 'undefined' && editor && editor.setTheme) {
         editor.setTheme(effectiveTheme() === 'dark' ? 'ace/theme/tomorrow_night' : 'ace/theme/tomorrow');
     }
+    // Swap the logo image to match the effective theme (guarded — not every page has it).
+    updateLogo();
     // Refresh the toggle button label if present.
     const btn = document.getElementById('theme-btn');
     if (btn) { btn.textContent = THEME_ICON[getTheme()]; btn.title = `Theme: ${getTheme()}`; }
