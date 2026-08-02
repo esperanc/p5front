@@ -90,6 +90,103 @@ ${scripts}
 }
 
 // -----------------------------------------------------------------------------
+// INDEX.HTML TAG WIRING — auto-insert/remove <script>/<link> when files or CDN
+// libraries are added to a project, so the user never hand-edits index.html.
+// Pure string operations on the raw HTML (like reorder.js): formatting, comments
+// and indentation are preserved. All take the project `files` map and mutate its
+// 'index.html' entry in place; the caller is responsible for persisting/syncing.
+// -----------------------------------------------------------------------------
+function _reEscape(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// A local `src`/`href` may appear as `name.js`, `./name.js`, or `name.js?v=2`.
+function _resourceSrcPattern(src) { return `\\.?/?${_reEscape(src)}(?:\\?[^"']*)?`; }
+
+// Is this resource already referenced anywhere in the HTML (as src or href)?
+function htmlHasResource(html, src) {
+    return new RegExp(`(?:src|href)\\s*=\\s*["']${_resourceSrcPattern(src)}["']`, 'i').test(html);
+}
+
+// Insert `tag` on its own line immediately before the first match of `anchorRe`,
+// copying the anchor line's indentation. Returns the new HTML, or null if the
+// anchor isn't found (so callers can try a fallback anchor).
+function insertTagBefore(html, anchorRe, tag) {
+    const m = anchorRe.exec(html);
+    if (!m) return null;
+    const lineStart = html.lastIndexOf('\n', m.index) + 1;
+    const indent = (html.slice(lineStart, m.index).match(/^[ \t]*/) || [''])[0];
+    return html.slice(0, lineStart) + indent + tag + '\n' + html.slice(lineStart);
+}
+
+// Add `tag` inside <head>, grouped after the last existing <script>/<link>
+// (so an add-on library loads after p5), matching that sibling's indentation.
+// Falls back to before </head>, then </body>, then appended.
+function insertIntoHead(html, tag) {
+    const lines = html.split('\n');
+    const closeIdx = lines.findIndex(l => /<\/head>/i.test(l));
+    if (closeIdx === -1) {
+        return insertTagBefore(html, /<\/body>/i, tag) || (html + `\n${tag}\n`);
+    }
+    let insertAt = closeIdx, indentSrc = lines[closeIdx];
+    for (let i = 0; i < closeIdx; i++) {
+        if (/<(?:script|link)\b/i.test(lines[i])) { insertAt = i + 1; indentSrc = lines[i]; }
+    }
+    const indent = (indentSrc.match(/^[ \t]*/) || [''])[0];
+    lines.splice(insertAt, 0, indent + tag);
+    return lines.join('\n');
+}
+
+// Add a <script> for `src`. External libraries go in <head> (they must load
+// before local code); local modules go just before the entry sketch's <script>
+// (so a module defining a class/var loads before the sketch that uses it),
+// falling back to end-of-<body>. No-op (returns false) if already present.
+function addScriptToIndexHtml(files, src, opts = {}) {
+    const { external = false, moduleType = false, beforeSrc = null } = opts;
+    const html = files['index.html'];
+    if (typeof html !== 'string' || htmlHasResource(html, src)) return false;
+    const tag = `<script${moduleType ? ' type="module"' : ''} src="${src}"></script>`;
+    let out = null;
+    if (external) {
+        out = insertIntoHead(html, tag);
+    } else {
+        if (beforeSrc && htmlHasResource(html, beforeSrc)) {
+            const anchor = new RegExp(`<script\\b[^>]*\\bsrc\\s*=\\s*["']${_resourceSrcPattern(beforeSrc)}["'][^>]*>`, 'i');
+            out = insertTagBefore(html, anchor, tag);
+        }
+        out = out || insertTagBefore(html, /<\/body>/i, tag)
+                  || insertTagBefore(html, /<\/html>/i, tag);
+    }
+    files['index.html'] = out || (html + `\n${tag}\n`);
+    return true;
+}
+
+// Add a <link rel="stylesheet"> for `href` in <head>. No-op if already present.
+function addStyleToIndexHtml(files, href) {
+    const html = files['index.html'];
+    if (typeof html !== 'string' || htmlHasResource(html, href)) return false;
+    files['index.html'] = insertIntoHead(html, `<link rel="stylesheet" href="${href}" />`);
+    return true;
+}
+
+// Remove the <script>/<link> line(s) referencing `src` (used when a file is
+// deleted, so no broken tag is left behind).
+function removeResourceFromIndexHtml(files, src) {
+    const html = files['index.html'];
+    if (typeof html !== 'string') return;
+    const p = _resourceSrcPattern(src);
+    const scriptRe = new RegExp(`[ \\t]*<script\\b[^>]*\\bsrc\\s*=\\s*["']${p}["'][^>]*>\\s*</script>[ \\t]*\\r?\\n?`, 'gi');
+    const linkRe   = new RegExp(`[ \\t]*<link\\b[^>]*\\bhref\\s*=\\s*["']${p}["'][^>]*>[ \\t]*\\r?\\n?`, 'gi');
+    files['index.html'] = html.replace(scriptRe, '').replace(linkRe, '');
+}
+
+// Point any tag referencing `oldSrc` at `newSrc` (used when a file is renamed).
+function renameResourceInIndexHtml(files, oldSrc, newSrc) {
+    const html = files['index.html'];
+    if (typeof html !== 'string') return;
+    const re = new RegExp(`((?:src|href)\\s*=\\s*["'])${_resourceSrcPattern(oldSrc)}(["'])`, 'gi');
+    files['index.html'] = html.replace(re, (m, pre, post) => pre + newSrc + post);
+}
+
+// -----------------------------------------------------------------------------
 // IMPORT — zip Blob → { files, name, origin, warnings }
 // -----------------------------------------------------------------------------
 async function importArchive(blob, filenameHint) {

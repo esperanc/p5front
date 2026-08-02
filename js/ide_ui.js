@@ -179,20 +179,89 @@ function syncEditorToFiles() {
 // -----------------------------------------------------------------------------
 // FILE OPERATIONS
 // -----------------------------------------------------------------------------
-function addFile() {
-    const name = prompt('New file path (e.g. "helper.js" or "shaders/tex.frag"):');
-    if (!name) return;
-    const path = name.trim().replace(/^\/+/, '');
+// A path that can be wired into index.html as a local <script>.
+function isScriptPath(p) { return /\.m?js$/i.test(p); }
+
+// Push a programmatic change to a text file into its live Ace session too, so
+// syncEditorToFiles() (on the next save/run) doesn't clobber it with stale text.
+function syncFileSession(path) {
+    if (sessions[path] && !isBinaryValue(projectFiles[path])) {
+        sessions[path].setValue(projectFiles[path] || '', -1);
+    }
+}
+function syncIndexHtmlSession() { syncFileSession('index.html'); }
+
+// --- New file modal (replaces the old prompt) --------------------------------
+function openNewFileModal() {
+    $('newfile-path').value = '';
+    $('newfile-include').checked = true;
+    $('newfile-module').checked = false;
+    updateNewFileOpts();
+    $('newfile-overlay').style.display = 'flex';
+    $('newfile-path').focus();
+}
+function closeNewFileModal() { $('newfile-overlay').style.display = 'none'; }
+
+// Reveal the <script> wiring options only when the path looks like JS.
+function updateNewFileOpts() {
+    const path = $('newfile-path').value.trim().replace(/^\/+/, '');
+    $('newfile-js-opts').style.display = isScriptPath(path) ? 'block' : 'none';
+}
+
+function submitNewFile() {
+    const path = $('newfile-path').value.trim().replace(/^\/+/, '');
     if (!path) return;
     if (path in projectFiles) { alert('A file with that path already exists.'); return; }
+    const isJs = isScriptPath(path);
+    const include    = isJs && $('newfile-include').checked;
+    const moduleType = isJs && $('newfile-module').checked;
+
     projectFiles[path] = '';
-    openFile(path);
+    if (include) {
+        syncEditorToFiles();   // capture pending index.html edits before mutating it
+        addScriptToIndexHtml(projectFiles, path, { moduleType, beforeSrc: pickMainSketch() });
+        syncIndexHtmlSession();
+    }
+    closeNewFileModal();
+    openFile(path);            // land the user in the new module, ready to type
+    saveProject();
+}
+
+// --- Add library modal (CDN URL → <script>/<link> in index.html) -------------
+function openLibModal() {
+    $('addlib-url').value = '';
+    $('addlib-overlay').style.display = 'flex';
+    $('addlib-url').focus();
+}
+function closeLibModal() { $('addlib-overlay').style.display = 'none'; }
+
+function submitAddLib() {
+    const url = $('addlib-url').value.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('//')) {
+        alert('Please enter an absolute URL (starting with https://).');
+        return;
+    }
+    syncEditorToFiles();       // capture pending index.html edits before mutating it
+    const clean = url.split(/[?#]/)[0];
+    const added = /\.css$/i.test(clean)
+        ? addStyleToIndexHtml(projectFiles, url)
+        : addScriptToIndexHtml(projectFiles, url, { external: true, moduleType: /\.mjs$/i.test(clean) });
+    syncIndexHtmlSession();
+    closeLibModal();
+    if (!added) { alert('That URL is already included in index.html.'); return; }
+    openFile('index.html');    // show the inserted tag as confirmation
     saveProject();
 }
 
 function deleteFile(path) {
     if (path === 'index.html') { alert('index.html is the entry point and cannot be deleted.'); return; }
     if (!confirm(`Delete "${path}"?`)) return;
+    if (/\.(m?js|css)$/i.test(path)) {
+        syncEditorToFiles();   // don't lose pending index.html edits when we rewrite it
+        removeResourceFromIndexHtml(projectFiles, path);
+        syncIndexHtmlSession();
+    }
     delete projectFiles[path];
     delete sessions[path];
     if (currentFile === path) currentFile = 'index.html';
@@ -214,6 +283,11 @@ function renameFile(path) {
         sessions[np] = sessions[path];
         sessions[np].setMode(aceModeFor(np));
         delete sessions[path];
+    }
+    // Keep any <script>/<link> in index.html pointing at the renamed file.
+    if (/\.(m?js|css)$/i.test(path)) {
+        renameResourceInIndexHtml(projectFiles, path, np);
+        syncIndexHtmlSession();
     }
     if (currentFile === path) currentFile = np;
     openFile(currentFile);
@@ -290,6 +364,124 @@ function logLine(text, cls) {
 }
 
 // -----------------------------------------------------------------------------
+// CANVAS SNAPSHOT — grab a PNG of the running sketch for the thumbnail.
+// -----------------------------------------------------------------------------
+// Ask the running sketch (via the SW-injected handler) for a PNG of its canvas;
+// it forces a redraw first so WEBGL reads populated. Falls back to reading the
+// same-origin canvas directly (fine for 2D). Rejects if nothing is running.
+function requestRawSnapshot(timeoutMs = 1500) {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const rid = 'snap-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        const onMsg = (e) => {
+            const d = e.data;
+            if (!d || d.__p5front !== true || d.type !== 'snapshot' || d.rid !== rid) return;
+            settled = true; window.removeEventListener('message', onMsg);
+            d.error ? reject(new Error(d.error)) : resolve(d.dataUrl);
+        };
+        window.addEventListener('message', onMsg);
+        try { runner.contentWindow.postMessage({ __p5front_cmd: 'snapshot', rid }, '*'); }
+        catch (e) { /* cross-origin/no window → fall through to the timeout fallback */ }
+        setTimeout(() => {
+            if (settled) return;
+            window.removeEventListener('message', onMsg);
+            try {
+                const cv = runner.contentDocument && runner.contentDocument.querySelector('canvas');
+                if (cv) return resolve(cv.toDataURL('image/png'));
+            } catch (e) { /* tainted or inaccessible */ }
+            reject(new Error('Could not read the canvas — run the sketch first.'));
+        }, timeoutMs);
+    });
+}
+
+// Downscale a data URL so its longest side is <= maxDim. Returns a PNG data URL.
+function downscaleDataUrl(dataUrl, maxDim = 480) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            try { resolve(c.toDataURL('image/png')); } catch (e) { reject(e); }
+        };
+        img.onerror = () => reject(new Error('Snapshot image failed to load.'));
+        img.src = dataUrl;
+    });
+}
+
+async function captureThumbnail() {
+    const raw = await requestRawSnapshot();
+    if (!raw || !raw.startsWith('data:image')) throw new Error('Empty snapshot.');
+    return downscaleDataUrl(raw, 480);
+}
+
+// -----------------------------------------------------------------------------
+// SKETCH INFO MODAL — title, tags, markdown description, thumbnail (README.md +
+// thumbnail.png inside the project; see meta.js).
+// -----------------------------------------------------------------------------
+let infoThumbData = null;   // working thumbnail (data URL or null) for the modal
+
+function openInfoModal() {
+    syncEditorToFiles();
+    const meta = readProjectMeta(projectFiles);
+    $('info-title').value = meta.title || '';
+    $('info-title').placeholder = projectName || 'Sketch title';
+    $('info-tags').value  = meta.tags.join(', ');
+    $('info-desc').value  = meta.description || '';
+    infoThumbData = meta.hasThumb ? meta.thumbnailData : null;
+    renderInfoThumb();
+    $('info-overlay').style.display = 'flex';
+    $('info-title').focus();
+}
+function closeInfoModal() { $('info-overlay').style.display = 'none'; }
+
+function renderInfoThumb() {
+    const box = $('info-thumb');
+    if (infoThumbData) box.innerHTML = `<img src="${infoThumbData}" alt="thumbnail" />`;
+    else box.innerHTML = `<span class="info-thumb-empty">No thumbnail yet</span>`;
+    $('info-thumb-clear').style.display = infoThumbData ? '' : 'none';
+}
+
+async function infoCaptureThumb() {
+    const btn = $('info-thumb-capture');
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Capturing…';
+    try {
+        infoThumbData = await captureThumbnail();
+        renderInfoThumb();
+    } catch (e) {
+        alert('Snapshot failed: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = label;
+    }
+}
+
+function infoClearThumb() { infoThumbData = null; renderInfoThumb(); }
+
+function submitInfo() {
+    writeProjectMeta(projectFiles, {
+        title:       $('info-title').value.trim(),
+        tags:        parseTagInput($('info-tags').value),
+        description: $('info-desc').value
+    });
+    if (infoThumbData) projectFiles[THUMB_FILE] = infoThumbData;
+    else { delete projectFiles[THUMB_FILE]; delete sessions[THUMB_FILE]; }
+    delete projMetaCache[projectId];   // Projects modal will reload fresh meta
+
+    // Keep any open editor session for README.md consistent with what we wrote.
+    if (META_FILE in projectFiles) syncFileSession(META_FILE);
+    else delete sessions[META_FILE];
+    if (!(currentFile in projectFiles)) currentFile = 'index.html';
+
+    closeInfoModal();
+    openFile(currentFile);   // refresh editor + file tree
+    saveProject();
+}
+
+// -----------------------------------------------------------------------------
 // IMPORT / EXPORT
 // -----------------------------------------------------------------------------
 async function exportProject() {
@@ -342,13 +534,45 @@ async function shareProject() {
 // PROJECTS MODAL — open / delete / new, with date or A–Z sorting.
 // -----------------------------------------------------------------------------
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
+let projectFilter = '';
+const projMetaCache = {};   // id -> { title, tags, hasThumb, thumb } (session cache)
+
+// Load a project's metadata (from its files in IDB) into the session cache.
+async function loadProjectMeta(id) {
+    if (projMetaCache[id]) return projMetaCache[id];
+    let m = { title: '', tags: [], hasThumb: false, thumb: null };
+    try {
+        const rec = await getProject(id);
+        const meta = readProjectMeta(rec && rec.files);
+        m = { title: meta.title, tags: meta.tags, hasThumb: meta.hasThumb, thumb: meta.hasThumb ? meta.thumbnailData : null };
+    } catch (e) { /* keep defaults */ }
+    projMetaCache[id] = m;
+    return m;
+}
 
 async function openProjectsModal() {
     await saveProject();
-    renderProjectsModal();
+    projMetaCache[projectId] = null; delete projMetaCache[projectId];   // current may have just changed
+    projectFilter = '';
+    $('project-filter').value = '';
     $('projects-overlay').style.display = 'flex';
+    renderProjectsModal();                                  // instant, from the registry
+    await Promise.all(listProjects().map(p => loadProjectMeta(p.id)));
+    renderProjectsModal();                                  // now with thumbnails, tags, filtering
 }
 function closeProjectsModal() { $('projects-overlay').style.display = 'none'; }
+
+function projectMatchesFilter(p) {
+    const f = projectFilter.trim().toLowerCase();
+    if (!f) return true;
+    if ((p.name || p.id).toLowerCase().includes(f)) return true;
+    const m = projMetaCache[p.id];
+    if (m) {
+        if ((m.title || '').toLowerCase().includes(f)) return true;
+        if (m.tags.some(t => t.toLowerCase().includes(f))) return true;
+    }
+    return false;
+}
 
 function renderProjectsModal() {
     const listEl = $('modal-project-list');
@@ -359,14 +583,25 @@ function renderProjectsModal() {
     $('sort-toggle').textContent = projectSort === 'date' ? 'Sort: Date' : 'Sort: A–Z';
 
     if (!projs.length) { listEl.innerHTML = '<li class="proj-empty">No projects yet.</li>'; return; }
+    projs = projs.filter(projectMatchesFilter);
+    if (!projs.length) { listEl.innerHTML = '<li class="proj-empty">No projects match the filter.</li>'; return; }
     listEl.innerHTML = '';
     for (const p of projs) {
+        const m = projMetaCache[p.id];
+        const thumb = (m && m.thumb)
+            ? `<div class="proj-thumb"><img src="${m.thumb}" alt="" /></div>`
+            : `<div class="proj-thumb proj-thumb-empty"></div>`;
+        const tags = (m && m.tags && m.tags.length)
+            ? `<div class="proj-tags">${m.tags.map(t => `<span class="proj-tag">${escapeHtml(t)}</span>`).join('')}</div>`
+            : '';
         const li = document.createElement('li');
         li.className = 'proj-row' + (p.id === projectId ? ' current' : '');
         li.innerHTML =
-            `<div class="proj-info">
-               <div class="proj-name">${escapeHtml(p.name || p.id)}</div>
+            `${thumb}
+             <div class="proj-info">
+               <div class="proj-name">${escapeHtml((m && m.title) || p.name || p.id)}</div>
                <div class="proj-meta">${p.origin && p.origin !== 'native' ? escapeHtml(p.origin) + ' · ' : ''}${timeAgo(p.lastModified)}</div>
+               ${tags}
              </div>
              <button class="proj-dup ghost icon" title="Duplicate project">
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -381,6 +616,7 @@ function renderProjectsModal() {
             e.stopPropagation();
             if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
                 removeRegistryEntry(p.id);
+                delete projMetaCache[p.id];
                 renderProjectsModal();
             }
         };
@@ -571,6 +807,7 @@ async function init() {
     window.addEventListener('message', (e) => {
         const d = e.data;
         if (!d || d.__p5front !== true) return;
+        if (d.type === 'snapshot') return;   // handled per-request in captureThumbnail()
         const cls = d.type === 'error' ? 'err' : (d.type === 'warn' ? 'warn' : '');
         logLine(d.text, cls);
     });
@@ -669,8 +906,39 @@ function wireControls() {
     $('view-btn').onclick   = openViewWindow;
     $('export-btn').onclick = exportProject;
     $('share-btn').onclick  = shareProject;
-    $('add-file').onclick   = addFile;
+    $('add-file').onclick   = openNewFileModal;
     setupSettingsModal();
+
+    // New file modal
+    $('newfile-path').oninput   = updateNewFileOpts;
+    $('close-newfile').onclick  = closeNewFileModal;
+    $('newfile-cancel').onclick = closeNewFileModal;
+    $('newfile-create').onclick = submitNewFile;
+    $('newfile-overlay').onclick = (e) => { if (e.target === $('newfile-overlay')) closeNewFileModal(); };
+    $('newfile-path').onkeydown = (e) => {
+        if (e.key === 'Enter') submitNewFile();
+        else if (e.key === 'Escape') closeNewFileModal();
+    };
+
+    // Sketch info modal
+    $('info-btn').onclick           = openInfoModal;
+    $('close-info').onclick         = closeInfoModal;
+    $('info-cancel').onclick        = closeInfoModal;
+    $('info-save').onclick          = submitInfo;
+    $('info-thumb-capture').onclick = infoCaptureThumb;
+    $('info-thumb-clear').onclick   = infoClearThumb;
+    $('info-overlay').onclick = (e) => { if (e.target === $('info-overlay')) closeInfoModal(); };
+
+    // Add library modal
+    $('add-lib').onclick       = openLibModal;
+    $('close-addlib').onclick  = closeLibModal;
+    $('addlib-cancel').onclick = closeLibModal;
+    $('addlib-add').onclick    = submitAddLib;
+    $('addlib-overlay').onclick = (e) => { if (e.target === $('addlib-overlay')) closeLibModal(); };
+    $('addlib-url').onkeydown = (e) => {
+        if (e.key === 'Enter') submitAddLib();
+        else if (e.key === 'Escape') closeLibModal();
+    };
 
     // Projects modal
     $('projects-btn').onclick   = openProjectsModal;
@@ -682,6 +950,7 @@ function wireControls() {
         renderProjectsModal();
     };
     $('projects-overlay').onclick = (e) => { if (e.target === $('projects-overlay')) closeProjectsModal(); };
+    $('project-filter').oninput = (e) => { projectFilter = e.target.value; renderProjectsModal(); };
 
     // Export / import all projects (see backup.js)
     $('export-all').onclick = () => exportProjects();

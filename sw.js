@@ -79,6 +79,22 @@ const INSTR = `<script>
   window.addEventListener('unhandledrejection', function(e){
     var r = e.reason; post('error', 'Unhandled rejection: ' + ((r && r.message) || r));
   });
+  // Snapshot: the IDE asks for a PNG of the canvas. Force a fresh frame first so
+  // WEBGL (whose drawing buffer is cleared after compositing) is read populated.
+  window.addEventListener('message', function(e){
+    var d = e.data;
+    if (!d || d.__p5front_cmd !== 'snapshot') return;
+    var out = { __p5front:true, type:'snapshot', rid:d.rid, dataUrl:null, error:null };
+    try {
+      var cv = document.querySelector('canvas');
+      if (!cv) { out.error = 'no-canvas'; }
+      else {
+        if (typeof window.redraw === 'function') { try { window.redraw(); } catch(_){} }
+        out.dataUrl = cv.toDataURL('image/png');
+      }
+    } catch(err){ out.error = (err && err.name || 'Error') + ': ' + (err && err.message || err); }
+    try { parent.postMessage(out, '*'); } catch(_){}
+  });
 })();
 </script>`;
 

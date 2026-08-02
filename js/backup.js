@@ -44,10 +44,35 @@ function addFilesToZip(folder, files) {
 }
 
 // ---- Auto-generated root gallery -------------------------------------------
+// Plain-text excerpt of a markdown description for a gallery card.
+function descExcerpt(md, max = 160) {
+    let s = String(md || '')
+        .replace(/```[\s\S]*?```/g, ' ')          // code fences
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')     // images
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')   // links → text
+        .replace(/[#>*_`~-]+/g, ' ')               // md punctuation
+        .replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max).replace(/\s+\S*$/, '') + '…' : s;
+}
+
 function buildGalleryHtml(projects) {
-    const rows = projects.map(p =>
-        `      <li><a href="${encodeURIComponent(p.folder)}/">${escapeHtml(p.name)}</a></li>`
-    ).join('\n');
+    const cards = projects.map(p => {
+        const href  = encodeURIComponent(p.folder) + '/';
+        const title = escapeHtml(p.title || p.name);
+        const thumb = p.hasThumb
+            ? `<a href="${href}" class="thumb"><img loading="lazy" src="${href}thumbnail.png" alt="${title}" /></a>`
+            : `<a href="${href}" class="thumb thumb-empty"><span>${title}</span></a>`;
+        const tags = (p.tags && p.tags.length)
+            ? `<div class="tags">${p.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
+            : '';
+        const desc = p.description ? `<p class="desc">${escapeHtml(descExcerpt(p.description))}</p>` : '';
+        return `      <article class="card">
+        ${thumb}
+        <h2><a href="${href}">${title}</a></h2>
+        ${tags}
+        ${desc}
+      </article>`;
+    }).join('\n');
     const count = projects.length;
     return `<!DOCTYPE html>
 <html lang="en">
@@ -56,26 +81,34 @@ function buildGalleryHtml(projects) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>p5front projects</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
-    h1 { font-size: 1.4rem; margin-bottom: .2rem; }
-    .meta { color: #888; font-size: .85rem; margin-top: 0; }
-    ul { list-style: none; padding: 0; margin-top: 1.5rem; }
-    li { padding: 10px 0; border-bottom: 1px solid #ddd; }
-    a { color: #d63384; text-decoration: none; font-weight: 600; }
-    a:hover { text-decoration: underline; }
+    :root { --fg:#1a1c20; --soft:#888; --line:#e2e5ea; --accent:#d63384; --card:#fff; --bg:#fafbfc; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 1080px; margin: 0 auto; padding: 40px 20px; line-height: 1.5; background: var(--bg); color: var(--fg); }
+    h1 { font-size: 1.5rem; margin: 0 0 .2rem; }
+    .meta { color: var(--soft); font-size: .85rem; margin: 0 0 1.8rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+    .thumb { display: block; aspect-ratio: 1 / 1; background: #f0f1f4; overflow: hidden; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-empty { display: flex; align-items: center; justify-content: center; color: var(--accent); font-weight: 700; text-decoration: none; padding: 12px; text-align: center; }
+    .card h2 { font-size: 1rem; margin: 12px 14px 6px; }
+    .card h2 a { color: var(--fg); text-decoration: none; }
+    .card h2 a:hover { color: var(--accent); }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 14px 8px; }
+    .tag { font-size: .72rem; color: var(--accent); background: rgba(214,51,132,.1); border-radius: 999px; padding: 2px 9px; }
+    .desc { font-size: .82rem; color: var(--soft); margin: 0 14px 14px; }
     @media (prefers-color-scheme: dark) {
-      body { background: #16181d; color: #e6e8eb; }
-      li { border-color: #2c313a; }
-      a { color: #ef6fb0; }
+      :root { --fg:#e6e8eb; --soft:#9aa0aa; --line:#2c313a; --accent:#ef6fb0; --card:#1c1f26; --bg:#16181d; }
+      .thumb { background: #23262e; }
     }
   </style>
 </head>
 <body>
   <h1>p5front projects</h1>
   <p class="meta">${count} sketch${count === 1 ? '' : 'es'} &middot; exported ${new Date().toISOString().slice(0, 10)}</p>
-  <ul>
-${rows}
-  </ul>
+  <div class="grid">
+${cards}
+  </div>
 </body>
 </html>
 `;
@@ -107,9 +140,12 @@ async function exportProjects() {
         usedFolders.add(folder.toLowerCase());
 
         addFilesToZip(zip.folder(folder), rec.files);
+        const meta = (typeof readProjectMeta === 'function') ? readProjectMeta(rec.files) : { tags: [], hasThumb: false };
         manifest.projects.push({
             folder, id: p.id, name: p.name || p.id,
-            origin: p.origin || 'native', lastModified: p.lastModified || Date.now()
+            origin: p.origin || 'native', lastModified: p.lastModified || Date.now(),
+            title: meta.title || '', tags: meta.tags || [],
+            description: meta.description || '', hasThumb: !!meta.hasThumb
         });
     }
 

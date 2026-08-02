@@ -287,6 +287,17 @@ body.ide { overflow: hidden; }
 .proj-dup { display: inline-flex; align-items: center; color: var(--text-soft); }
 .proj-dup:hover { color: var(--text); }
 .proj-empty { color: var(--text-soft); padding: 16px; text-align: center; }
+.proj-thumb { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 6px; overflow: hidden; background: var(--bg-soft); border: 1px solid var(--border); }
+.proj-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.proj-thumb-empty { background: var(--bg-soft); }
+.proj-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.proj-tag { font-size: 11px; color: var(--accept); background: color-mix(in srgb, var(--accept) 14%, transparent); border-radius: 999px; padding: 1px 8px; }
+.modal-subhead { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.modal-subhead input {
+  font: inherit; font-size: 13px; color: var(--text); width: 100%; box-sizing: border-box;
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px;
+}
+.modal-subhead input:focus { border-color: var(--accept); outline: none; }
 .modal-foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 
 /* Preferences modal */
@@ -307,4 +318,39 @@ body.ide { overflow: hidden; }
 .settings-row select { min-width: 160px; }
 .settings-row input[type="number"] { width: 80px; }
 .settings-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accept); }
+.settings-row input[type="text"],
+.settings-row input[type="url"] {
+  font: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 8px; min-width: 240px; flex: 1;
+}
+.settings-row input[type="text"]:focus,
+.settings-row input[type="url"]:focus { border-color: var(--accept); outline: none; }
+.settings-row label code { font-size: 12px; color: var(--text-soft); }
+.modal-hint { margin: 8px 2px 2px; font-size: 12px; color: var(--text-soft); line-height: 1.5; }
+.modal-hint code { color: var(--text); }
+
+/* Sketch info modal */
+.modal-dialog.info { width: 640px; }
+.info-grid { display: flex; gap: 16px; }
+.info-fields { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.info-side { flex: 0 0 200px; display: flex; flex-direction: column; gap: 8px; }
+.info-label { font-size: 12px; font-weight: 600; color: var(--text); margin: 10px 0 4px; }
+.info-fields .info-label:first-child { margin-top: 0; }
+.info-hint { font-weight: 400; color: var(--text-soft); }
+.info-fields input[type="text"],
+.info-fields textarea {
+  font: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; width: 100%; box-sizing: border-box;
+}
+.info-fields textarea { resize: vertical; line-height: 1.5; font-family: inherit; }
+.info-fields input[type="text"]:focus,
+.info-fields textarea:focus { border-color: var(--accept); outline: none; }
+.info-thumb {
+  width: 100%; aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-soft); overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+.info-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.info-thumb-empty { font-size: 12px; color: var(--text-soft); text-align: center; padding: 8px; }
 

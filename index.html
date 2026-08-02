@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="favicon_io/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png" />
   <link rel="manifest" href="favicon_io/site.webmanifest" />
-  <link rel="stylesheet" href="css/app.css?v=8" />
+  <link rel="stylesheet" href="css/app.css?v=10" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
 </head>
@@ -18,6 +18,9 @@
     <div class="ide-head">
       <a class="logo" href="https://github.com/esperanc/p5front" target="_blank" rel="noopener" title="p5front on GitHub"><img id="logo-img" alt="p5front" /></a>
       <input id="pname" class="pname" title="Project name" />
+      <button id="info-btn" class="ghost icon" title="Sketch info — description, tags, thumbnail">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      </button>
       <span class="spacer"></span>
       <button id="projects-btn" title="Open a project">Open</button>
       <button id="run-btn" class="primary">▶ Run</button>
@@ -36,6 +39,9 @@
       <div class="side-title">
         Files <span class="spacer"></span>
         <button id="add-file" title="New file">＋</button>
+        <button id="add-lib" title="Add a library from a URL (CDN)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+        </button>
         <button id="upload-file" title="Upload files">⤒</button>
         <input id="upload-input" type="file" multiple hidden />
       </div>
@@ -80,6 +86,9 @@
         <button id="sort-toggle" title="Toggle sort order">Sort: Date</button>
         <button id="modal-new" class="primary">New</button>
         <button id="close-projects" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-subhead">
+        <input id="project-filter" type="text" placeholder="Filter by name or tag…" />
       </div>
       <ul id="modal-project-list" class="modal-list"></ul>
       <div class="modal-foot">
@@ -148,15 +157,106 @@
     </div>
   </div>
 
+  <!-- New file modal -->
+  <div id="newfile-overlay" class="modal-overlay">
+    <div class="modal-dialog settings">
+      <div class="modal-head">
+        <strong>New file</strong>
+        <span class="spacer"></span>
+        <button id="close-newfile" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-row">
+          <label for="newfile-path">Path</label>
+          <input id="newfile-path" type="text" placeholder="helper.js or shaders/tex.frag" />
+        </div>
+        <div id="newfile-js-opts" class="js-only">
+          <div class="settings-row">
+            <label for="newfile-include">Include <code>&lt;script&gt;</code> in index.html</label>
+            <input id="newfile-include" type="checkbox" checked />
+          </div>
+          <div class="settings-row">
+            <label for="newfile-module">Load as <code>type="module"</code></label>
+            <input id="newfile-module" type="checkbox" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span class="spacer"></span>
+        <button id="newfile-cancel" class="ghost">Cancel</button>
+        <button id="newfile-create" class="primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add library modal -->
+  <div id="addlib-overlay" class="modal-overlay">
+    <div class="modal-dialog settings">
+      <div class="modal-head">
+        <strong>Add library</strong>
+        <span class="spacer"></span>
+        <button id="close-addlib" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-row">
+          <label for="addlib-url">URL</label>
+          <input id="addlib-url" type="url" placeholder="https://cdn.jsdelivr.net/npm/…" />
+        </div>
+        <p class="modal-hint">A <code>.css</code> URL is added as a stylesheet; anything else as a
+        <code>&lt;script&gt;</code> in <code>&lt;head&gt;</code>. A <code>.mjs</code> URL loads as a module.</p>
+      </div>
+      <div class="modal-foot">
+        <span class="spacer"></span>
+        <button id="addlib-cancel" class="ghost">Cancel</button>
+        <button id="addlib-add" class="primary">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sketch info modal -->
+  <div id="info-overlay" class="modal-overlay">
+    <div class="modal-dialog info">
+      <div class="modal-head">
+        <strong>Sketch info</strong>
+        <span class="spacer"></span>
+        <button id="close-info" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-grid">
+          <div class="info-fields">
+            <label class="info-label" for="info-title">Title</label>
+            <input id="info-title" type="text" />
+            <label class="info-label" for="info-tags">Tags <span class="info-hint">(comma-separated)</span></label>
+            <input id="info-tags" type="text" placeholder="generative, noise, wip" />
+            <label class="info-label" for="info-desc">Description <span class="info-hint">(markdown)</span></label>
+            <textarea id="info-desc" rows="8" placeholder="What is this sketch? How is it used?&#10;&#10;## Usage&#10;- click to…"></textarea>
+          </div>
+          <div class="info-side">
+            <label class="info-label">Thumbnail</label>
+            <div id="info-thumb" class="info-thumb"></div>
+            <button id="info-thumb-capture">Capture from canvas</button>
+            <button id="info-thumb-clear" class="ghost">Remove</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span class="spacer"></span>
+        <button id="info-cancel" class="ghost">Cancel</button>
+        <button id="info-save" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"></script>
   <script src="js/util.js?v=3"></script>
   <script src="js/storage.js?v=2"></script>
-  <script src="js/formats.js?v=2"></script>
+  <script src="js/meta.js?v=1"></script>
+  <script src="js/formats.js?v=4"></script>
   <script src="js/share.js?v=3"></script>
   <script src="js/settings.js?v=4"></script>
-  <script src="js/backup.js?v=4"></script>
+  <script src="js/backup.js?v=5"></script>
   <script src="js/reorder.js?v=1"></script>
-  <script src="js/ide_ui.js?v=10"></script>
+  <script src="js/ide_ui.js?v=12"></script>
 </body>
 </html>
