@@ -130,24 +130,40 @@ function saveRegistry(reg) {
     }
 }
 
-function upsertRegistryEntry(id, { name, origin } = {}) {
-    const reg = getRegistry();
-    const entry = reg[id] || { id };
-    if (name   !== undefined) entry.name   = name;
-    if (origin !== undefined) entry.origin = origin;
-    if (entry.name === undefined) entry.name = id;
-    entry.id = id;
-    entry.lastModified = Date.now();
-    reg[id] = entry;
-    saveRegistry(reg);
-    return entry;
+// Serialize the registry read-modify-write across ALL tabs of this origin, so two
+// windows saving at once can't lose each other's entries (getRegistry reads the
+// whole object and saveRegistry writes it back — a classic lost-update window).
+// Web Locks make that critical section atomic; without the API we run inline
+// (best-effort, same as before). Callers that navigate right after MUST await.
+function withRegistryLock(fn) {
+    if (navigator.locks && navigator.locks.request) {
+        return navigator.locks.request('p5front-registry', fn);
+    }
+    return Promise.resolve(fn());
 }
 
-// Removes registry entry (sync) and file data from IDB (async, fire-and-forget).
+// Async: returns a Promise that resolves to the entry once the write is committed.
+function upsertRegistryEntry(id, { name, origin } = {}) {
+    return withRegistryLock(() => {
+        const reg = getRegistry();
+        const entry = reg[id] || { id };
+        if (name   !== undefined) entry.name   = name;
+        if (origin !== undefined) entry.origin = origin;
+        if (entry.name === undefined) entry.name = id;
+        entry.id = id;
+        entry.lastModified = Date.now();
+        reg[id] = entry;
+        saveRegistry(reg);
+        return entry;
+    });
+}
+
+// Removes the registry entry (under the lock) then the file data from IDB.
 function removeRegistryEntry(id) {
-    const reg = getRegistry();
-    if (reg[id]) { delete reg[id]; saveRegistry(reg); }
-    return deleteProject(id).catch(e => console.warn(`IDB delete failed for "${id}":`, e));
+    return withRegistryLock(() => {
+        const reg = getRegistry();
+        if (reg[id]) { delete reg[id]; saveRegistry(reg); }
+    }).then(() => deleteProject(id).catch(e => console.warn(`IDB delete failed for "${id}":`, e)));
 }
 
 function listProjects() {

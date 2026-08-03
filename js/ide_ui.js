@@ -318,7 +318,7 @@ async function saveProject() {
     syncEditorToFiles();
     try {
         await putProject(projectId, projectFiles);
-        upsertRegistryEntry(projectId, { name: projectName });
+        await upsertRegistryEntry(projectId, { name: projectName });
     } catch (e) {
         console.error('save failed', e);
     }
@@ -503,7 +503,7 @@ async function importZip(blob, filename) {
         const { files, name, origin, warnings } = await importArchive(blob, filename);
         const { id, name: finalName } = await resolveCollision(name, files);
         await putProject(id, files);
-        upsertRegistryEntry(id, { name: finalName, origin });
+        await upsertRegistryEntry(id, { name: finalName, origin });
         if (warnings.length) console.warn('Import warnings:', warnings);
         location.href = `?id=${encodeURIComponent(id)}`;
     } catch (e) {
@@ -612,10 +612,10 @@ function renderProjectsModal() {
             location.href = `?id=${encodeURIComponent(p.id)}`;
         };
         li.querySelector('.proj-dup').onclick = (e) => { e.stopPropagation(); duplicateProject(p.id); };
-        li.querySelector('.proj-del').onclick = (e) => {
+        li.querySelector('.proj-del').onclick = async (e) => {
             e.stopPropagation();
             if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
-                removeRegistryEntry(p.id);
+                await removeRegistryEntry(p.id);   // commit under the lock before re-reading
                 delete projMetaCache[p.id];
                 renderProjectsModal();
             }
@@ -644,7 +644,7 @@ async function duplicateProject(id) {
     while (getRegistry()[newId]) { name = `${baseName} ${n}`; newId = slugify(name) || `${newId}-${n}`; n++; }
 
     await putProject(newId, { ...rec.files });
-    upsertRegistryEntry(newId, { name, origin });
+    await upsertRegistryEntry(newId, { name, origin });
     location.href = `?id=${encodeURIComponent(newId)}`;
 }
 
@@ -812,6 +812,24 @@ async function init() {
         logLine(d.text, cls);
     });
 
+    // Live cross-tab sync: another window changed the registry (create/delete/
+    // rename). Refresh the open Projects list and this tab's header name. (Fires
+    // only in OTHER tabs; per-project FILE edits live in IndexedDB and don't emit
+    // a storage event, so those aren't reflected here.)
+    window.addEventListener('storage', (e) => {
+        if (e.key !== null && e.key !== LS_REGISTRY_KEY) return;
+        const reg = getRegistry();
+        if (reg[projectId] && reg[projectId].name && reg[projectId].name !== projectName) {
+            projectName = reg[projectId].name;
+            pnameEl.value = projectName;
+        }
+        if ($('projects-overlay').style.display === 'flex') {
+            renderProjectsModal();   // create/delete/rename come from listProjects()
+            Promise.all(listProjects().filter(p => !projMetaCache[p.id]).map(p => loadProjectMeta(p.id)))
+                .then(() => { if ($('projects-overlay').style.display === 'flex') renderProjectsModal(); });
+        }
+    });
+
     const params = new URLSearchParams(location.search);
 
     // Shared link: decode the embedded project, store a copy, open it.
@@ -822,7 +840,7 @@ async function init() {
             const { id, name: finalName, existing } = await resolveCollision(name, map);
             if (!existing) {                       // already have this exact project → just open it
                 await putProject(id, map);
-                upsertRegistryEntry(id, { name: finalName, origin: 'shared' });
+                await upsertRegistryEntry(id, { name: finalName, origin: 'shared' });
             }
             location.replace(`?id=${encodeURIComponent(id)}`);
         } else {
@@ -854,7 +872,7 @@ async function init() {
         // New project: seed the default template.
         projectFiles = defaultProjectFiles();
         await putProject(projectId, projectFiles);
-        upsertRegistryEntry(projectId, { name: prettify(projectId), origin: 'native' });
+        await upsertRegistryEntry(projectId, { name: prettify(projectId), origin: 'native' });
     }
 
     // Repair broken <script> ordering (e.g. some OpenProcessing exports) once, up
@@ -978,7 +996,7 @@ function wireControls() {
 
     pnameEl.onchange = () => {
         const v = pnameEl.value.trim();
-        if (v) { projectName = v; upsertRegistryEntry(projectId, { name: v }); }
+        if (v) { projectName = v; upsertRegistryEntry(projectId, { name: v }); }   // fire-and-forget rename
         else pnameEl.value = projectName;
     };
 

@@ -305,7 +305,7 @@ async function importProjects(blob, filenameHint) {
         }
 
         await putProject(id, files);
-        upsertRegistryEntry(id, { name, origin });
+        await upsertRegistryEntry(id, { name, origin });
     }
 
     return results;
