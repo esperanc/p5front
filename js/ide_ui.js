@@ -511,6 +511,87 @@ async function importZip(blob, filename) {
     }
 }
 
+// Derive a project filename ("test.zip") from a URL's last path segment.
+function zipFilenameFromUrl(url) {
+    try {
+        const seg = new URL(url, location.href).pathname.split('/').filter(Boolean).pop();
+        return seg ? decodeURIComponent(seg) : 'imported.zip';
+    } catch (e) { return 'imported.zip'; }
+}
+
+// Find an existing project whose name maps to the same slug (an id collision, or
+// a renamed project whose name slugifies the same). Returns its id, or null.
+function findProjectByName(name) {
+    const reg = getRegistry();
+    const slug = slugify(name);
+    if (reg[slug]) return slug;
+    const hit = Object.values(reg).find(e => slugify(e.name || e.id) === slug);
+    return hit ? hit.id : null;
+}
+
+// Ask how to resolve a name collision for a single incoming project.
+// Resolves to 'overwrite' | 'copy' | null (cancel).
+function askProjectConflict(name) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.style.display = 'flex';
+        overlay.innerHTML =
+            `<div class="modal-dialog" style="width:420px">
+               <div class="modal-head"><strong>Project already exists</strong></div>
+               <div class="modal-body">
+                 <p style="margin:0 0 12px">A project named &ldquo;${escapeHtml(name)}&rdquo; already exists. What would you like to do?</p>
+                 <div style="display:flex; flex-direction:column; gap:8px">
+                   <button data-v="overwrite" class="primary">Overwrite existing</button>
+                   <button data-v="copy">Import as a copy</button>
+                   <button data-v="cancel" class="ghost">Cancel</button>
+                 </div>
+               </div>
+             </div>`;
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            const v = e.target && e.target.getAttribute && e.target.getAttribute('data-v');
+            if (!v) return;
+            document.body.removeChild(overlay);
+            resolve(v === 'cancel' ? null : v);
+        });
+    });
+}
+
+// Fetch a zip from a URL (?zip=...) and import it as a project, asking how to
+// resolve a name collision. Always ends by navigating away (to the imported or
+// existing project, or back to a clean URL on cancel/failure).
+async function loadProjectFromURL(zipUrl) {
+    let imported;
+    try {
+        const res = await fetch(zipUrl, { mode: 'cors' });
+        if (!res.ok) throw new Error(`server responded ${res.status} ${res.statusText}`);
+        const blob = await res.blob();
+        imported = await importArchive(blob, zipFilenameFromUrl(zipUrl));
+    } catch (e) {
+        alert(`Could not load the project from:\n${zipUrl}\n\n${e.message}\n\n` +
+              `Check the URL is reachable, points to a valid .zip, and that the server ` +
+              `allows cross-origin requests (CORS).`);
+        location.replace(location.pathname);
+        return;
+    }
+    if (imported.warnings && imported.warnings.length) console.warn('Import warnings:', imported.warnings);
+
+    const existingId = findProjectByName(imported.name);
+    let targetId = slugify(imported.name) || ('project-' + Date.now());
+    let targetName = imported.name;
+    if (existingId) {
+        const choice = await askProjectConflict(imported.name);
+        if (!choice) { location.replace(`?id=${encodeURIComponent(existingId)}`); return; }   // cancel → open existing
+        if (choice === 'overwrite') { targetId = existingId; }
+        else { const r = await resolveCollision(imported.name, imported.files); targetId = r.id; targetName = r.name; }
+    }
+
+    await putProject(targetId, imported.files);
+    await upsertRegistryEntry(targetId, { name: targetName, origin: imported.origin || 'imported' });
+    location.replace(`?id=${encodeURIComponent(targetId)}`);
+}
+
 // -----------------------------------------------------------------------------
 // SHARE — copy a URL that embeds the whole project.
 // -----------------------------------------------------------------------------
@@ -847,6 +928,12 @@ async function init() {
             alert('This share link is invalid or corrupted.');
             location.replace(location.pathname);
         }
+        return;
+    }
+
+    // ?zip=<url>: fetch a hosted project zip and import it (asks on name clash).
+    if (params.get('zip')) {
+        await loadProjectFromURL(params.get('zip'));
         return;
     }
 
