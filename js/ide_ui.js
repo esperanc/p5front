@@ -576,19 +576,80 @@ async function loadProjectFromURL(zipUrl) {
         return;
     }
     if (imported.warnings && imported.warnings.length) console.warn('Import warnings:', imported.warnings);
+    await storeImportedProject(imported);
+}
 
-    const existingId = findProjectByName(imported.name);
-    let targetId = slugify(imported.name) || ('project-' + Date.now());
-    let targetName = imported.name;
+// fetch that rejects on a non-2xx response (with a useful message).
+async function fetchOk(url) {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
+    return res;
+}
+
+// ArrayBuffer → base64 (chunked, so large assets don't blow the call stack).
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+// Load a project from an exported p5front repository (?repo=<root>&project=<folder>):
+// read the repo's p5front.json, then fetch that project's listed files from its
+// folder and import them (same conflict handling as a zip load).
+async function loadProjectFromRepo(repoUrl, folder) {
+    let imported;
+    try {
+        if (!repoUrl || !folder) throw new Error('missing repo or project reference');
+        const root = new URL(repoUrl, location.href);
+        if (!root.pathname.endsWith('/')) root.pathname += '/';
+        const manifestUrl = new URL('p5front.json', root).href;
+        const manifest = await (await fetchOk(manifestUrl)).json();
+        const entry = (manifest.projects || []).find(p => p.folder === folder || p.id === folder);
+        if (!entry) throw new Error(`project "${folder}" is not listed in ${manifestUrl}`);
+        const fileList = entry.files || [];
+        if (!fileList.length) throw new Error('the manifest lists no files for this project (re-export with a newer p5front)');
+
+        const folderBase = new URL(encodeURIComponent(entry.folder) + '/', root).href;
+        const files = {};
+        for (const rel of fileList) {
+            const fileUrl = new URL(rel.split('/').map(encodeURIComponent).join('/'), folderBase).href;
+            const res = await fetchOk(fileUrl);
+            files[rel] = isTextPath(rel)
+                ? await res.text()
+                : `data:${mimeForPath(rel)};base64,${arrayBufferToBase64(await res.arrayBuffer())}`;
+        }
+        if (!files['index.html'] && typeof synthesizeIndexHtml === 'function') {
+            files['index.html'] = synthesizeIndexHtml(files);
+        }
+        imported = { files, name: entry.name || entry.folder || folder, origin: entry.origin || 'imported' };
+    } catch (e) {
+        alert(`Could not load the project from the repository:\n${e.message}\n\n` +
+              `Check the URL points to a p5front export and that its server allows ` +
+              `cross-origin requests (CORS).`);
+        location.replace(location.pathname);
+        return;
+    }
+    await storeImportedProject(imported);
+}
+
+// Given { files, name, origin }, resolve a name collision (via dialog) and store
+// the project, then open it. Shared by the zip (?zip=) and repo (?repo=) loaders.
+async function storeImportedProject({ files, name, origin }) {
+    const existingId = findProjectByName(name);
+    let targetId = slugify(name) || ('project-' + Date.now());
+    let targetName = name;
     if (existingId) {
-        const choice = await askProjectConflict(imported.name);
+        const choice = await askProjectConflict(name);
         if (!choice) { location.replace(`?id=${encodeURIComponent(existingId)}`); return; }   // cancel → open existing
         if (choice === 'overwrite') { targetId = existingId; }
-        else { const r = await resolveCollision(imported.name, imported.files); targetId = r.id; targetName = r.name; }
+        else { const r = await resolveCollision(name, files); targetId = r.id; targetName = r.name; }
     }
-
-    await putProject(targetId, imported.files);
-    await upsertRegistryEntry(targetId, { name: targetName, origin: imported.origin || 'imported' });
+    await putProject(targetId, files);
+    await upsertRegistryEntry(targetId, { name: targetName, origin: origin || 'imported' });
     location.replace(`?id=${encodeURIComponent(targetId)}`);
 }
 
@@ -934,6 +995,13 @@ async function init() {
     // ?zip=<url>: fetch a hosted project zip and import it (asks on name clash).
     if (params.get('zip')) {
         await loadProjectFromURL(params.get('zip'));
+        return;
+    }
+
+    // ?repo=<root>&project=<folder>: import a project from an exported p5front
+    // repository (fetches its files from the folder listed in p5front.json).
+    if (params.get('repo')) {
+        await loadProjectFromRepo(params.get('repo'), params.get('project'));
         return;
     }
 
