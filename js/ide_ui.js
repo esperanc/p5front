@@ -671,6 +671,51 @@ async function storeImportedProject({ files, name, origin }) {
 }
 
 // -----------------------------------------------------------------------------
+// PROJECT ID ↔ NAME — the id (also the ?id= handle) is a slug of the name. It is
+// assigned at creation and, without this, never changes — so a renamed project
+// keeps a stale id unrelated to its name. These keep the id tracking the name.
+// (?id= is a local handle; sharing uses ?share=/?zip=/?repo=, so re-keying is safe.)
+// -----------------------------------------------------------------------------
+
+// Move the current project from its id to `newId` (IDB record + registry entry +
+// the address bar), preserving files and origin. Copies before deleting the old.
+async function migrateProjectId(newId) {
+    const oldId = projectId;
+    if (!newId || newId === oldId) return;
+    const origin = (getRegistry()[oldId] || {}).origin;
+    syncEditorToFiles();
+    await putProject(newId, projectFiles);
+    await upsertRegistryEntry(newId, { name: projectName, origin });
+    await removeRegistryEntry(oldId);                 // registry entry + old IDB record
+    projectId = newId;
+    localStorage.setItem(LS_LAST_PROJECT, newId);
+    history.replaceState(null, '', `?id=${encodeURIComponent(newId)}`);
+}
+
+// Rename the current project. Migrate the id to the new name's slug when that slug
+// is free; on a clash with a *different* project, keep the id and just relabel.
+async function renameProject(newName) {
+    newName = String(newName || '').trim();
+    if (!newName || newName === projectName) return;
+    projectName = newName;
+    const desired = slugify(newName);
+    if (desired && desired !== projectId && !getRegistry()[desired]) {
+        await migrateProjectId(desired);
+    } else {
+        await upsertRegistryEntry(projectId, { name: newName });
+    }
+}
+
+// On load, self-heal a stale id (from a past rename) to the current name's slug
+// when that slug is free — so opening a renamed project fixes its ?id=.
+async function maybeMigrateIdOnLoad() {
+    const desired = slugify(projectName);
+    if (desired && desired !== projectId && !getRegistry()[desired]) {
+        await migrateProjectId(desired);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // SHARE — copy a URL that embeds the whole project.
 // -----------------------------------------------------------------------------
 async function shareProject() {
@@ -1061,6 +1106,9 @@ async function init() {
     projectName = (reg[projectId] && reg[projectId].name) || prettify(projectId);
     pnameEl.value = projectName;
 
+    // Self-heal a stale id (from a past rename) so ?id= matches the project name.
+    await maybeMigrateIdOnLoad();
+
     localStorage.setItem(LS_LAST_PROJECT, projectId);   // remember for the next no-id visit
 
     currentFile = pickMainSketch();
@@ -1168,7 +1216,7 @@ function wireControls() {
 
     pnameEl.onchange = () => {
         const v = pnameEl.value.trim();
-        if (v) { projectName = v; upsertRegistryEntry(projectId, { name: v }); }   // fire-and-forget rename
+        if (v) renameProject(v);              // relabels and migrates the id to match
         else pnameEl.value = projectName;
     };
 
