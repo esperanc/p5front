@@ -613,18 +613,35 @@ async function loadProjectFromRepo(repoUrl, folder) {
         const fileList = entry.files || [];
         if (!fileList.length) throw new Error('the manifest lists no files for this project (re-export with a newer p5front)');
 
+        // Best-effort per file: a file listed in the manifest may be missing on the
+        // host — notably README.md, which GitHub Pages' Jekyll renders to README.html
+        // (so the raw .md 404s). Skip such files instead of aborting the whole load.
         const folderBase = new URL(encodeURIComponent(entry.folder) + '/', root).href;
         const files = {};
+        const skipped = [];
         for (const rel of fileList) {
             const fileUrl = new URL(rel.split('/').map(encodeURIComponent).join('/'), folderBase).href;
-            const res = await fetchOk(fileUrl);
+            let res;
+            try { res = await fetch(fileUrl, { mode: 'cors' }); } catch (e) { skipped.push(rel); continue; }
+            if (!res.ok) { skipped.push(rel); continue; }
             files[rel] = isTextPath(rel)
                 ? await res.text()
                 : `data:${mimeForPath(rel)};base64,${arrayBufferToBase64(await res.arrayBuffer())}`;
         }
-        if (!files['index.html'] && typeof synthesizeIndexHtml === 'function') {
-            files['index.html'] = synthesizeIndexHtml(files);
+        if (!files['index.html']) {
+            if (typeof synthesizeIndexHtml === 'function' && Object.keys(files).length) {
+                files['index.html'] = synthesizeIndexHtml(files);
+            } else {
+                throw new Error('the project has no index.html and none of its files could be fetched');
+            }
         }
+        // If README.md couldn't be fetched, rebuild it from the manifest so the
+        // project's title/tags/description survive the import.
+        if (!files['README.md'] && typeof writeProjectMeta === 'function' &&
+            (entry.title || (entry.tags && entry.tags.length) || entry.description)) {
+            writeProjectMeta(files, { title: entry.title, tags: entry.tags, description: entry.description });
+        }
+        if (skipped.length) console.warn('Files listed in the manifest were not fetchable and were skipped:', skipped);
         imported = { files, name: entry.name || entry.folder || folder, origin: entry.origin || 'imported' };
     } catch (e) {
         alert(`Could not load the project from the repository:\n${e.message}\n\n` +

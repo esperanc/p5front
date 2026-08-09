@@ -310,6 +310,10 @@ async function exportProjects() {
 
     zip.file('p5front.json', JSON.stringify(manifest, null, 2));
     zip.file('index.html', buildGalleryHtml(manifest.projects));
+    // Disable GitHub Pages' Jekyll so every file (notably front-matter README.md)
+    // is served verbatim — otherwise Jekyll renders README.md to README.html and
+    // the raw .md 404s, breaking ?repo= loading of that project's metadata.
+    zip.file('.nojekyll', '');
 
     const blob = await zip.generateAsync({ type: 'blob' });
     const a = document.createElement('a');
@@ -379,7 +383,7 @@ async function importProjects(blob, filenameHint) {
     for (const path in zip.files) {
         const entry = zip.files[path];
         if (entry.dir) continue;
-        if (path.startsWith('__MACOSX/') || /(^|\/)\.DS_Store$/.test(path)) continue;
+        if (path.startsWith('__MACOSX/') || /(^|\/)\.(DS_Store|nojekyll)$/.test(path)) continue;
         allFiles[path] = entry;
         const parts = path.split('/');
         if (/^index\.html?$/i.test(parts[parts.length - 1])) {
