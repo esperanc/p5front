@@ -124,6 +124,26 @@ Each project folder is self-contained, so you can **host the unzipped folder on 
 
 ---
 
+## URL parameters
+
+p5front reads a few query parameters on load to decide what to open. With **no** parameter it reopens the project you were last editing (or the most recent, or a fresh one on first visit).
+
+| Parameter | Example | Effect |
+|---|---|---|
+| `id` | `?id=bauhaus-grid` | Open a **local** project by its id (from this browser's IndexedDB). |
+| `share` | `?share=<data>&name=<name>` | Open a project **embedded in the link** (produced by **Share**). `name` is optional. |
+| `zip` | `?zip=https://host/sketch.zip` | Fetch a **hosted zip** and import it as a project (name taken from the filename). |
+| `repo` | `?repo=https://host/export/&project=<folder>` | Import one project from an **exported repository** — fetches the files listed for that `folder` in the repo's `p5front.json`. |
+
+Notes:
+
+- `id` only finds projects already stored in **this** browser — it fetches nothing. To load a project hosted elsewhere, use `zip` or `repo`.
+- `zip` and `repo` **import** the project into local storage and then open it, so it becomes a normal, editable project. They do **not** run it automatically. If a project of the same name already exists, a dialog offers **Overwrite existing**, **Import as a copy**, or **Cancel**.
+- The gallery produced by **Export all** builds `repo` links for its **Edit in p5front** buttons, pointing at a configurable p5front instance (the "Edit opens in:" field).
+- **Cross-origin fetches (`zip` / `repo`) require CORS**: the server hosting the zip/repo must send `Access-Control-Allow-Origin` (GitHub Pages does, with `*`). You can avoid CORS altogether by hosting the p5front instance and the zip/repo on the **same origin** (same scheme + host + port) — then any static server, even `python3 -m http.server`, suffices. Note the mixed-content rule: a page served over `https://` can only fetch `https://` URLs.
+
+---
+
 ## Editor & p5.js v2 notes
 
 - The Ace linter is **Acorn-based** and reports real syntax errors only — it won't false-flag modern syntax (static class fields, private `#fields`, `??`, optional chaining, etc.). Toggle it in **Preferences → Check JS syntax**.
