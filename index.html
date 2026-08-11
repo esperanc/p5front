@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="favicon_io/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png" />
   <link rel="manifest" href="favicon_io/site.webmanifest" />
-  <link rel="stylesheet" href="css/app.css?v=10" />
+  <link rel="stylesheet" href="css/app.css?v=12" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
 </head>
@@ -79,7 +79,7 @@
 
   <!-- Projects modal -->
   <div id="projects-overlay" class="modal-overlay">
-    <div class="modal-dialog">
+    <div class="modal-dialog projects">
       <div class="modal-head">
         <strong>Projects</strong>
         <span class="spacer"></span>
@@ -87,10 +87,16 @@
         <button id="modal-new" class="primary">New</button>
         <button id="close-projects" class="ghost" title="Close">✕</button>
       </div>
-      <div class="modal-subhead">
-        <input id="project-filter" type="text" placeholder="Filter by name or tag…" />
+      <div class="proj-browser">
+        <aside id="proj-rail" class="proj-rail"></aside>
+        <div class="proj-main">
+          <div class="modal-subhead">
+            <input id="project-filter" type="text" placeholder="Filter by name…" />
+          </div>
+          <div id="proj-facets" class="proj-facets"></div>
+          <ul id="modal-project-list" class="modal-list"></ul>
+        </div>
       </div>
-      <ul id="modal-project-list" class="modal-list"></ul>
       <div class="modal-foot">
         <button id="export-all" title="Download all projects as a runnable repository">⬇ Export all</button>
         <button id="import-all" title="Import projects from an export">⬆ Import…</button>
@@ -226,6 +232,9 @@
           <div class="info-fields">
             <label class="info-label" for="info-title">Title</label>
             <input id="info-title" type="text" />
+            <label class="info-label" for="info-collection">Collection <span class="info-hint">(path, e.g. course/2026)</span></label>
+            <input id="info-collection" type="text" list="collection-suggestions" placeholder="e.g. sketches/generative" />
+            <datalist id="collection-suggestions"></datalist>
             <label class="info-label" for="info-tags">Tags <span class="info-hint">(comma-separated)</span></label>
             <input id="info-tags" type="text" placeholder="generative, noise, wip" />
             <label class="info-label" for="info-desc">Description <span class="info-hint">(markdown)</span></label>
@@ -247,16 +256,34 @@
     </div>
   </div>
 
+  <!-- Read description modal (from the Projects browser) -->
+  <div id="read-overlay" class="modal-overlay">
+    <div class="modal-dialog info">
+      <div class="modal-head">
+        <strong id="read-title">Sketch</strong>
+        <span class="spacer"></span>
+        <button id="read-open" class="primary">Open</button>
+        <button id="close-read" class="ghost" title="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="read-thumb" class="read-thumb"></div>
+        <div id="read-meta" class="read-meta"></div>
+        <div id="read-tags" class="tags"></div>
+        <div id="read-desc" class="md"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/acorn/8.11.3/acorn.min.js"></script>
   <script src="js/util.js?v=3"></script>
-  <script src="js/storage.js?v=3"></script>
-  <script src="js/meta.js?v=1"></script>
+  <script src="js/storage.js?v=5"></script>
+  <script src="js/meta.js?v=3"></script>
   <script src="js/formats.js?v=4"></script>
   <script src="js/share.js?v=3"></script>
   <script src="js/settings.js?v=4"></script>
-  <script src="js/backup.js?v=8"></script>
+  <script src="js/backup.js?v=9"></script>
   <script src="js/reorder.js?v=1"></script>
-  <script src="js/ide_ui.js?v=17"></script>
+  <script src="js/ide_ui.js?v=19"></script>
 </body>
 </html>

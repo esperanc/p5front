@@ -14,14 +14,17 @@ p5front can **import and export project zips** from the [p5.js Web Editor](https
 
 - 🎨 **Write & run p5.js v2 sketches** entirely in the browser, with live preview.
 - 📦 **Import / export zips** compatible with the p5.js Web Editor and OpenProcessing — a single, format-agnostic adapter (any folder with an `index.html` at its root works).
-- 💾 **Local project storage** — files live in IndexedDB, project metadata in `localStorage`. Nothing leaves your machine. Opens the project you were last editing (or a fresh one on first visit); switch or create projects from the **Projects** dialog.
+- 💾 **Local project storage** — files live in IndexedDB, a project registry in `localStorage`. Nothing leaves your machine, and multiple windows stay consistent. Opens the project you were last editing (or a fresh one on first visit); switch or create projects from the **Projects** dialog.
 - 🗂️ **Multi-file projects** with subfolders (JS, CSS, HTML, GLSL shaders, images, fonts, JSON, …).
+- 🧩 **Add files & libraries in a click** — the New-file dialog can auto-insert a module's `<script>` into `index.html`, and **Add library** wires a CDN URL into `<head>`. Renaming or deleting a referenced file updates its tag.
+- 🏷️ **Per-sketch metadata** — give each sketch a title, tags, a **collection** (folder-like path), a **Markdown description**, and a **thumbnail** snapped from the running canvas, all edited in the **Info** dialog. Stored inside the project, so they travel with export/import.
+- 🔎 **Organize with collections & tags** — the **Projects** browser has a collections tree, tag facets and a name filter, and lets you read a sketch's rendered description before opening it.
 - 🧑‍💻 **Ace editor** with per-language syntax highlighting, **per-file undo history & cursor position**, and a modern **linter** (Acorn — understands ES2022+ like static/private class fields).
 - 🖼️ **View mode** — open a sketch full-window in a separate tab, with a collapsible console.
-- 🔗 **Share via URL** — the whole project is compressed into a link (unreferenced assets are stripped to keep it small).
-- 🗄️ **Export / import all projects** — download every project as a single zip that unzips into a **directly hostable, runnable repository** (one folder per project + an auto-generated gallery); re-import it anywhere.
+- 🔗 **Share via URL** — the whole project is compressed into a link (unreferenced assets are stripped to keep it small). Or load a project from a hosted zip/repository (see [URL parameters](#url-parameters)).
+- 🗄️ **Export / import all projects** — download every project as a single zip that unzips into a **directly hostable, runnable repository** with a **visual gallery** (thumbnails, rendered descriptions, and "Edit in p5front" links); re-import it anywhere.
 - 🎛️ **Preferences** — theme (auto / light / dark), editor font family & size, tab size, soft tabs, word wrap, show invisibles, syntax checking.
-- 🧩 **Resizable, collapsible panels** and a drag-and-drop file sidebar.
+- ↔️ **Resizable, collapsible panels** and a drag-and-drop file sidebar.
 - 🚀 **Static deploy** — works from any static host, including GitHub Pages.
 
 ---
@@ -45,7 +48,8 @@ Every project is a map of `path → content`:
 Text files are stored as strings; binary assets (images, fonts, audio) as `data:` URLs. The entry point is always **`index.html`** at the root — the same convention the p5.js Web Editor and OpenProcessing use, which is why a single importer handles both.
 
 - **Files** are persisted in **IndexedDB** (`p5front_db` → `files` store).
-- **Project metadata** (name, origin, timestamp) lives in `localStorage` (`p5front_projects_index`).
+- **A project registry** (name, origin, timestamp) lives in `localStorage` (`p5front_projects_index`). It also caches each project's derived metadata (title, tags, collection, whether it has a thumbnail/description) so the **Projects** browser can list, filter and group without opening every project's files. Registry writes are serialized across tabs with the **Web Locks API**, and open windows stay in sync via the `storage` event.
+- **Per-sketch metadata is a file**: a project's title, tags, collection and Markdown description live in a `README.md` front-matter block, and its thumbnail in `thumbnail.png`. Keeping them in the project (rather than a separate database) means they travel through export, import and share with no extra bookkeeping. The registry cache above is just a derived index over these.
 
 ### Running sketches: a Service Worker as a virtual filesystem
 
@@ -88,6 +92,38 @@ Notes:
 
 ---
 
+## Adding files & libraries
+
+The file sidebar has three actions:
+
+- **＋ New file** — asks for a path (subfolders allowed, e.g. `shaders/tex.frag`). For a `.js`/`.mjs` file it offers to **insert its `<script>` into `index.html`** for you (before the main sketch, so a module a sketch depends on loads first), and optionally as `type="module"`.
+- **🔗 Add library** — paste a CDN URL; p5front adds it to `<head>` as a `<script>` (or a `<link>` for a `.css`, or a module for `.mjs`). Handy for p5 add-ons and helper libraries.
+- **⤒ Upload** — add files (text or binary) to the current project.
+
+Renaming or deleting a file that's referenced from `index.html` **updates or removes its `<script>`/`<link>` tag** automatically, so you never hand-edit `index.html` to keep it in sync.
+
+---
+
+## Organizing & documenting sketches
+
+Click the **ⓘ Info** button (next to the project name) to describe a sketch:
+
+- **Title**, **Tags** (comma-separated) and a **Collection** — a folder-like path such as `course/2026/generative` that gives your sketches a single-home hierarchy (tags stay for cross-cutting facets).
+- A **Markdown description** for notes and usage instructions.
+- A **Thumbnail** captured straight from the running canvas (**Capture from canvas** — run the sketch first).
+
+All of this is saved *inside* the project (`README.md` front-matter + `thumbnail.png`), so it travels through export, import and share.
+
+The **Projects** dialog (**Open**) is a browser over this metadata:
+
+- A **collections rail** on the left — a tree built from your collection paths, with counts; pick one to narrow the list (including its sub-collections), or **Uncollected**.
+- **Tag facets** that combine (AND) with the selected collection, plus a name/title filter and date / A–Z sorting.
+- Each row shows its thumbnail, collection and tags; an **ⓘ** button opens a reading view with the description **rendered as Markdown**, so you can read a sketch's instructions before opening it.
+
+Renaming a project keeps its `?id=` in sync (the id follows the name), and the whole browser stays fast because it reads the registry's derived cache rather than opening every project.
+
+---
+
 ## Importing & exporting
 
 ### Import
@@ -110,15 +146,22 @@ Storage is per-browser and per-origin, so the **Projects** dialog has **Export a
 
 ```
 p5front-export-2026-07-25/
-├── index.html          # auto-generated gallery linking to each project
-├── p5front.json        # p5front metadata (auxiliary)
+├── index.html          # a visual gallery of all the projects
+├── p5front.json        # manifest (per-project metadata + file lists)
+├── .nojekyll           # so GitHub Pages serves every file verbatim
 ├── Bauhaus Grid/       # one folder per project (folder name = project name)
-│   ├── index.html
+│   ├── index.html      # runs the sketch standalone
+│   ├── README.md       # description (front-matter + Markdown)
+│   ├── thumbnail.png
 │   └── …
 └── …
 ```
 
-Each project folder is self-contained, so you can **host the unzipped folder on any static server** (e.g. GitHub Pages) and every sketch runs directly — no p5front and no Service Worker needed. `p5front.json` is only used to restore projects faithfully on re-import; the folders run without it.
+Each project folder is self-contained, so you can **host the unzipped folder on any static server** (e.g. GitHub Pages) and every sketch runs directly — no p5front and no Service Worker needed.
+
+The generated `index.html` is a **gallery**: a card per sketch with its thumbnail, tags and title. Clicking a card opens a **reading view** with the full **Markdown-rendered** description; a **▶ Run** button runs the sketch standalone, and an **Edit in p5front** button opens it for editing in a p5front instance (via [`?repo=`](#url-parameters)) whose URL you can set at the top of the page.
+
+> The `.nojekyll` file matters on GitHub Pages: without it, Jekyll turns front-matter `README.md` files into HTML and stops serving the raw `.md`, which would break metadata loading over `?repo=`.
 
 **Import…** reads such a zip back in. `p5front.json` is **optional**: any zip of projects works, where a project is any folder that directly contains an `index.html`. This covers folders at the top level, folders inside a wrapping container folder, and a single project at the archive root. Without a manifest, each project's name comes from its folder. When a project already exists, you choose once how to resolve it: keep both (import as copies), overwrite, or skip.
 
@@ -173,12 +216,14 @@ p5front/
 │   └── app.css       # Shared, theme-aware styles
 └── js/
     ├── util.js       # Helpers: slugify, name generator, theme
-    ├── storage.js    # IndexedDB + registry + the canonical file model
-    ├── formats.js    # Import/export adapters, default project template
+    ├── storage.js    # IndexedDB + registry (Web-Locks-safe) + the canonical file model
+    ├── meta.js       # Per-sketch metadata (README front-matter, thumbnail) + Markdown renderer
+    ├── formats.js    # Import/export adapters, default template, <script>/<link> auto-wiring
     ├── share.js      # URL sharing (LZString compression)
-    ├── backup.js     # Export/import all projects as a runnable repository
+    ├── backup.js     # Export/import all projects; the gallery generator
     ├── settings.js   # Editor preferences
-    └── ide_ui.js     # Editor wiring: file tree, run/stop, panels, linter
+    ├── reorder.js    # Dependency-order repair for multi-file <script> tags
+    └── ide_ui.js     # Editor wiring: file tree, run/stop, panels, linter, Projects browser
 ```
 
 ---

@@ -313,12 +313,18 @@ function uploadFiles(fileList) {
 // -----------------------------------------------------------------------------
 // PERSISTENCE
 // -----------------------------------------------------------------------------
+// The derived-cache fields the registry keeps for fast Projects-browser listing.
+function derivedMeta(files) {
+    const m = (typeof readProjectMeta === 'function') ? readProjectMeta(files) : {};
+    return { title: m.title || '', tags: m.tags || [], collection: m.collection || '', hasThumb: !!m.hasThumb, hasDesc: !!m.description };
+}
+
 async function saveProject() {
     if (!projectId) return;
     syncEditorToFiles();
     try {
         await putProject(projectId, projectFiles);
-        await upsertRegistryEntry(projectId, { name: projectName });
+        await upsertRegistryEntry(projectId, { name: projectName, ...derivedMeta(projectFiles) });
     } catch (e) {
         console.error('save failed', e);
     }
@@ -429,12 +435,22 @@ function openInfoModal() {
     const meta = readProjectMeta(projectFiles);
     $('info-title').value = meta.title || '';
     $('info-title').placeholder = projectName || 'Sketch title';
+    $('info-collection').value = meta.collection || '';
+    populateCollectionSuggestions();
     $('info-tags').value  = meta.tags.join(', ');
     $('info-desc').value  = meta.description || '';
     infoThumbData = meta.hasThumb ? meta.thumbnailData : null;
     renderInfoThumb();
     $('info-overlay').style.display = 'flex';
     $('info-title').focus();
+}
+
+// Autocomplete the Collection input from collections already in use (registry cache).
+function populateCollectionSuggestions() {
+    const set = new Set();
+    for (const p of listProjects()) if (p.collection) set.add(p.collection);
+    $('collection-suggestions').innerHTML =
+        [...set].sort().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
 }
 function closeInfoModal() { $('info-overlay').style.display = 'none'; }
 
@@ -465,11 +481,12 @@ function submitInfo() {
     writeProjectMeta(projectFiles, {
         title:       $('info-title').value.trim(),
         tags:        parseTagInput($('info-tags').value),
+        collection:  $('info-collection').value,
         description: $('info-desc').value
     });
     if (infoThumbData) projectFiles[THUMB_FILE] = infoThumbData;
     else { delete projectFiles[THUMB_FILE]; delete sessions[THUMB_FILE]; }
-    delete projMetaCache[projectId];   // Projects modal will reload fresh meta
+    delete projThumbCache[projectId];   // thumbnail may have changed; registry cache refreshes on save
 
     // Keep any open editor session for README.md consistent with what we wrote.
     if (META_FILE in projectFiles) syncFileSession(META_FILE);
@@ -666,7 +683,7 @@ async function storeImportedProject({ files, name, origin }) {
         else { const r = await resolveCollision(name, files); targetId = r.id; targetName = r.name; }
     }
     await putProject(targetId, files);
-    await upsertRegistryEntry(targetId, { name: targetName, origin: origin || 'imported' });
+    await upsertRegistryEntry(targetId, { name: targetName, origin: origin || 'imported', ...derivedMeta(files) });
     location.replace(`?id=${encodeURIComponent(targetId)}`);
 }
 
@@ -685,7 +702,7 @@ async function migrateProjectId(newId) {
     const origin = (getRegistry()[oldId] || {}).origin;
     syncEditorToFiles();
     await putProject(newId, projectFiles);
-    await upsertRegistryEntry(newId, { name: projectName, origin });
+    await upsertRegistryEntry(newId, { name: projectName, origin, ...derivedMeta(projectFiles) });
     await removeRegistryEntry(oldId);                 // registry entry + old IDB record
     projectId = newId;
     localStorage.setItem(LS_LAST_PROJECT, newId);
@@ -739,74 +756,129 @@ async function shareProject() {
 // -----------------------------------------------------------------------------
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
 let projectFilter = '';
-const projMetaCache = {};   // id -> { title, tags, hasThumb, thumb } (session cache)
+let projectCollection = '';               // '' = all; UNCOLLECTED = only projects with no collection
+let projectTags = new Set();              // selected tag facets (AND)
+const projThumbCache = {};                // id -> dataURL | null (lazy, only for shown rows)
+const UNCOLLECTED = ' none';
 
-// Load a project's metadata (from its files in IDB) into the session cache.
-async function loadProjectMeta(id) {
-    if (projMetaCache[id]) return projMetaCache[id];
-    let m = { title: '', tags: [], hasThumb: false, thumb: null };
-    try {
-        const rec = await getProject(id);
-        const meta = readProjectMeta(rec && rec.files);
-        m = { title: meta.title, tags: meta.tags, hasThumb: meta.hasThumb, thumb: meta.hasThumb ? meta.thumbnailData : null };
-    } catch (e) { /* keep defaults */ }
-    projMetaCache[id] = m;
-    return m;
+const projTagsOf = (p) => Array.isArray(p.tags) ? p.tags : [];
+const projCollOf = (p) => p.collection || '';
+
+// Backfill the registry's derived cache for projects saved before it existed
+// (one blob read each, only the first time). Cached entries are skipped.
+async function backfillProjectMeta() {
+    // hasDesc is the newest derived field; its absence flags an entry that predates
+    // the cache (or a schema addition) and needs a one-time refresh from its files.
+    for (const p of listProjects().filter(p => p.hasDesc === undefined)) {
+        let m = { title: '', tags: [], collection: '', hasThumb: false, description: '' };
+        try { const rec = await getProject(p.id); m = readProjectMeta(rec && rec.files); } catch (e) { /* defaults */ }
+        await cacheRegistryMeta(p.id, { title: m.title, tags: m.tags, collection: m.collection, hasThumb: m.hasThumb, hasDesc: !!m.description });
+    }
 }
 
 async function openProjectsModal() {
     await saveProject();
-    projMetaCache[projectId] = null; delete projMetaCache[projectId];   // current may have just changed
-    projectFilter = '';
+    projectFilter = ''; projectCollection = ''; projectTags = new Set();
     $('project-filter').value = '';
     $('projects-overlay').style.display = 'flex';
-    renderProjectsModal();                                  // instant, from the registry
-    await Promise.all(listProjects().map(p => loadProjectMeta(p.id)));
-    renderProjectsModal();                                  // now with thumbnails, tags, filtering
+    renderProjectsModal();                    // instant, from the registry cache
+    await backfillProjectMeta();              // fill any missing derived meta once
+    renderProjectsModal();
 }
 function closeProjectsModal() { $('projects-overlay').style.display = 'none'; }
 
+function projInCollection(p) {
+    if (projectCollection === UNCOLLECTED) return !projCollOf(p);
+    if (!projectCollection) return true;
+    const c = projCollOf(p);
+    return c === projectCollection || c.startsWith(projectCollection + '/');
+}
+
 function projectMatchesFilter(p) {
     const f = projectFilter.trim().toLowerCase();
-    if (!f) return true;
-    if ((p.name || p.id).toLowerCase().includes(f)) return true;
-    const m = projMetaCache[p.id];
-    if (m) {
-        if ((m.title || '').toLowerCase().includes(f)) return true;
-        if (m.tags.some(t => t.toLowerCase().includes(f))) return true;
+    if (f && !((p.title || '') + ' ' + (p.name || p.id)).toLowerCase().includes(f)) return false;
+    if (!projInCollection(p)) return false;
+    for (const t of projectTags) if (!projTagsOf(p).includes(t)) return false;
+    return true;
+}
+
+// Left rail: All / each collection path (with ancestor prefixes, indented by
+// depth) / Uncollected — each with a count; clicking selects it.
+function renderCollectionsRail() {
+    const rail = $('proj-rail');
+    if (!rail) return;
+    const all = listProjects();
+    const nodes = new Set();
+    let uncollected = 0;
+    for (const p of all) {
+        const c = projCollOf(p);
+        if (!c) { uncollected++; continue; }
+        const parts = c.split('/');
+        for (let i = 1; i <= parts.length; i++) nodes.add(parts.slice(0, i).join('/'));
     }
-    return false;
+    const countUnder = (n) => all.filter(p => { const c = projCollOf(p); return c === n || c.startsWith(n + '/'); }).length;
+    const item = (label, value, count, depth, active) =>
+        `<button class="rail-item${active ? ' active' : ''}" data-coll="${escapeHtml(value)}" style="padding-left:${8 + depth * 14}px">` +
+        `<span class="rail-label">${escapeHtml(label)}</span><span class="rail-count">${count}</span></button>`;
+
+    const out = [item('All sketches', '', all.length, 0, projectCollection === '')];
+    for (const n of [...nodes].sort())
+        out.push(item(n.split('/').pop(), n, countUnder(n), n.split('/').length, projectCollection === n));
+    if (uncollected) out.push(item('Uncollected', UNCOLLECTED, uncollected, 0, projectCollection === UNCOLLECTED));
+    rail.innerHTML = out.join('');
+    rail.querySelectorAll('.rail-item').forEach(b => b.onclick = () => { projectCollection = b.dataset.coll; renderProjectsModal(); });
+}
+
+// Tag facets present in the current collection scope, as AND-combining toggles.
+function renderTagFacets() {
+    const el = $('proj-facets');
+    if (!el) return;
+    const counts = {};
+    for (const p of listProjects()) if (projInCollection(p)) for (const t of projTagsOf(p)) counts[t] = (counts[t] || 0) + 1;
+    const tags = Object.keys(counts).sort();
+    if (!tags.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.innerHTML = tags.map(t =>
+        `<button class="facet${projectTags.has(t) ? ' active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)} <span class="facet-n">${counts[t]}</span></button>`).join('');
+    el.querySelectorAll('.facet').forEach(b => b.onclick = () => {
+        const t = b.dataset.tag;
+        projectTags.has(t) ? projectTags.delete(t) : projectTags.add(t);
+        renderProjectsModal();
+    });
 }
 
 function renderProjectsModal() {
+    renderCollectionsRail();
+    renderTagFacets();
+
     const listEl = $('modal-project-list');
-    let projs = listProjects();                       // date desc by default
+    let projs = listProjects();
     if (projectSort === 'alpha') {
-        projs = projs.slice().sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+        projs = projs.slice().sort((a, b) => (a.title || a.name || a.id).localeCompare(b.title || b.name || b.id));
     }
     $('sort-toggle').textContent = projectSort === 'date' ? 'Sort: Date' : 'Sort: A–Z';
 
     if (!projs.length) { listEl.innerHTML = '<li class="proj-empty">No projects yet.</li>'; return; }
     projs = projs.filter(projectMatchesFilter);
-    if (!projs.length) { listEl.innerHTML = '<li class="proj-empty">No projects match the filter.</li>'; return; }
+    if (!projs.length) { listEl.innerHTML = '<li class="proj-empty">No projects match.</li>'; return; }
+
     listEl.innerHTML = '';
     for (const p of projs) {
-        const m = projMetaCache[p.id];
-        const thumb = (m && m.thumb)
-            ? `<div class="proj-thumb"><img src="${m.thumb}" alt="" /></div>`
-            : `<div class="proj-thumb proj-thumb-empty"></div>`;
-        const tags = (m && m.tags && m.tags.length)
-            ? `<div class="proj-tags">${m.tags.map(t => `<span class="proj-tag">${escapeHtml(t)}</span>`).join('')}</div>`
-            : '';
+        const cached = projThumbCache[p.id];
+        const thumbInner = (p.hasThumb && cached) ? `<img src="${cached}" alt="" />` : '';
+        const tags = projTagsOf(p).length
+            ? `<div class="proj-tags">${projTagsOf(p).map(t => `<span class="proj-tag">${escapeHtml(t)}</span>`).join('')}</div>` : '';
+        const coll = projCollOf(p);
         const li = document.createElement('li');
         li.className = 'proj-row' + (p.id === projectId ? ' current' : '');
         li.innerHTML =
-            `${thumb}
+            `<div class="proj-thumb${p.hasThumb ? '' : ' proj-thumb-empty'}" data-thumb="${escapeHtml(p.id)}">${thumbInner}</div>
              <div class="proj-info">
-               <div class="proj-name">${escapeHtml((m && m.title) || p.name || p.id)}</div>
-               <div class="proj-meta">${p.origin && p.origin !== 'native' ? escapeHtml(p.origin) + ' · ' : ''}${timeAgo(p.lastModified)}</div>
+               <div class="proj-name">${escapeHtml(p.title || p.name || p.id)}</div>
+               <div class="proj-meta">${coll ? escapeHtml(coll) + ' · ' : ''}${p.origin && p.origin !== 'native' ? escapeHtml(p.origin) + ' · ' : ''}${timeAgo(p.lastModified)}</div>
                ${tags}
              </div>
+             ${p.hasDesc ? `<button class="proj-read ghost icon" title="Read description">ⓘ</button>` : ''}
              <button class="proj-dup ghost icon" title="Duplicate project">
                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
              </button>
@@ -815,18 +887,60 @@ function renderProjectsModal() {
             if (p.id === projectId) { closeProjectsModal(); return; }
             location.href = `?id=${encodeURIComponent(p.id)}`;
         };
+        const rb = li.querySelector('.proj-read');
+        if (rb) rb.onclick = (e) => { e.stopPropagation(); openReadModal(p.id); };
         li.querySelector('.proj-dup').onclick = (e) => { e.stopPropagation(); duplicateProject(p.id); };
         li.querySelector('.proj-del').onclick = async (e) => {
             e.stopPropagation();
-            if (confirm(`Delete "${p.name || p.id}"? This cannot be undone.`)) {
-                await removeRegistryEntry(p.id);   // commit under the lock before re-reading
-                delete projMetaCache[p.id];
+            if (confirm(`Delete "${p.title || p.name || p.id}"? This cannot be undone.`)) {
+                await removeRegistryEntry(p.id);
+                delete projThumbCache[p.id];
                 renderProjectsModal();
             }
         };
         listEl.appendChild(li);
     }
+    loadVisibleThumbnails();
 }
+
+// Fetch thumbnails only for the rows currently shown that have one and aren't cached.
+async function loadVisibleThumbnails() {
+    const boxes = [...document.querySelectorAll('#modal-project-list .proj-thumb[data-thumb]')]
+        .filter(b => !b.classList.contains('proj-thumb-empty') && !(b.dataset.thumb in projThumbCache));
+    for (const box of boxes) {
+        const id = box.dataset.thumb;
+        try {
+            const rec = await getProject(id);
+            const t = rec && rec.files && rec.files[THUMB_FILE];
+            projThumbCache[id] = (typeof t === 'string' && t.startsWith('data:')) ? t : null;
+        } catch (e) { projThumbCache[id] = null; }
+        if (projThumbCache[id]) {
+            const cur = document.querySelector(`#modal-project-list .proj-thumb[data-thumb="${CSS.escape(id)}"]`);
+            if (cur) cur.innerHTML = `<img src="${projThumbCache[id]}" alt="" />`;
+        }
+    }
+}
+
+// Reading view for a sketch's description (rendered markdown) from the Projects
+// browser — so you can read the instructions without opening the raw README.
+async function openReadModal(id) {
+    let meta = {};
+    try { const rec = await getProject(id); meta = readProjectMeta(rec && rec.files); } catch (e) { /* keep empty */ }
+    const reg = getRegistry()[id] || {};
+    $('read-title').textContent = meta.title || reg.name || id;
+    $('read-open').onclick = () => { location.href = `?id=${encodeURIComponent(id)}`; };
+    const tb = $('read-thumb');
+    tb.style.display = meta.hasThumb ? '' : 'none';
+    tb.innerHTML = meta.hasThumb ? `<img src="${meta.thumbnailData}" alt="" />` : '';
+    $('read-meta').textContent = meta.collection || '';
+    $('read-meta').style.display = meta.collection ? '' : 'none';
+    $('read-tags').innerHTML = (meta.tags || []).map(t => `<span class="proj-tag">${escapeHtml(t)}</span>`).join('');
+    $('read-desc').innerHTML = meta.description
+        ? mdToHtml(meta.description)
+        : '<p class="muted">No description.</p>';
+    $('read-overlay').style.display = 'flex';
+}
+function closeReadModal() { $('read-overlay').style.display = 'none'; }
 
 function newProject() {
     location.href = `?id=${encodeURIComponent(generateProjectName())}`;
@@ -848,7 +962,7 @@ async function duplicateProject(id) {
     while (getRegistry()[newId]) { name = `${baseName} ${n}`; newId = slugify(name) || `${newId}-${n}`; n++; }
 
     await putProject(newId, { ...rec.files });
-    await upsertRegistryEntry(newId, { name, origin });
+    await upsertRegistryEntry(newId, { name, origin, ...derivedMeta(rec.files) });
     location.href = `?id=${encodeURIComponent(newId)}`;
 }
 
@@ -1028,9 +1142,8 @@ async function init() {
             pnameEl.value = projectName;
         }
         if ($('projects-overlay').style.display === 'flex') {
-            renderProjectsModal();   // create/delete/rename come from listProjects()
-            Promise.all(listProjects().filter(p => !projMetaCache[p.id]).map(p => loadProjectMeta(p.id)))
-                .then(() => { if ($('projects-overlay').style.display === 'flex') renderProjectsModal(); });
+            // Registry (incl. the derived meta cache) is already fresh in listProjects().
+            renderProjectsModal();
         }
     });
 
@@ -1089,7 +1202,7 @@ async function init() {
         // New project: seed the default template.
         projectFiles = defaultProjectFiles();
         await putProject(projectId, projectFiles);
-        await upsertRegistryEntry(projectId, { name: prettify(projectId), origin: 'native' });
+        await upsertRegistryEntry(projectId, { name: prettify(projectId), origin: 'native', ...derivedMeta(projectFiles) });
     }
 
     // Repair broken <script> ordering (e.g. some OpenProcessing exports) once, up
@@ -1166,6 +1279,11 @@ function wireControls() {
     $('info-thumb-capture').onclick = infoCaptureThumb;
     $('info-thumb-clear').onclick   = infoClearThumb;
     $('info-overlay').onclick = (e) => { if (e.target === $('info-overlay')) closeInfoModal(); };
+
+    // Read (description) modal
+    $('close-read').onclick = closeReadModal;
+    $('read-overlay').onclick = (e) => { if (e.target === $('read-overlay')) closeReadModal(); };
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeReadModal(); });
 
     // Add library modal
     $('add-lib').onclick       = openLibModal;

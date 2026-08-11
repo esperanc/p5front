@@ -143,15 +143,41 @@ function withRegistryLock(fn) {
 }
 
 // Async: returns a Promise that resolves to the entry once the write is committed.
-function upsertRegistryEntry(id, { name, origin } = {}) {
+// Besides the authoritative name/origin, the entry also carries a DERIVED cache of
+// the project's metadata (title/tags/collection/hasThumb, read from its files) so
+// the Projects browser can list/filter/group without opening every project's blob.
+function upsertRegistryEntry(id, { name, origin, title, tags, collection, hasThumb, hasDesc } = {}) {
     return withRegistryLock(() => {
         const reg = getRegistry();
         const entry = reg[id] || { id };
-        if (name   !== undefined) entry.name   = name;
-        if (origin !== undefined) entry.origin = origin;
+        if (name       !== undefined) entry.name       = name;
+        if (origin     !== undefined) entry.origin     = origin;
+        if (title      !== undefined) entry.title      = title;
+        if (tags       !== undefined) entry.tags       = tags;
+        if (collection !== undefined) entry.collection = collection;
+        if (hasThumb   !== undefined) entry.hasThumb   = hasThumb;
+        if (hasDesc    !== undefined) entry.hasDesc    = hasDesc;
         if (entry.name === undefined) entry.name = id;
         entry.id = id;
         entry.lastModified = Date.now();
+        reg[id] = entry;
+        saveRegistry(reg);
+        return entry;
+    });
+}
+
+// Refresh just the derived metadata cache on an existing entry, WITHOUT bumping
+// lastModified — for lazily backfilling projects saved before the cache existed.
+function cacheRegistryMeta(id, { title, tags, collection, hasThumb, hasDesc } = {}) {
+    return withRegistryLock(() => {
+        const reg = getRegistry();
+        const entry = reg[id];
+        if (!entry) return null;
+        if (title      !== undefined) entry.title      = title;
+        if (tags       !== undefined) entry.tags       = tags;
+        if (collection !== undefined) entry.collection = collection;
+        if (hasThumb   !== undefined) entry.hasThumb   = hasThumb;
+        if (hasDesc    !== undefined) entry.hasDesc    = hasDesc;
         reg[id] = entry;
         saveRegistry(reg);
         return entry;

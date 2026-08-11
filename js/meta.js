@@ -37,39 +37,96 @@ function parseFrontMatter(md) {
     return { data, body: text.slice(m[0].length) };
 }
 
+// Normalise a collection path ("/Art//Generative/ " → "Art/Generative"): a
+// slash-delimited, single-home classification. Empty → '' (uncollected).
+function normalizeCollection(str) {
+    return String(str || '').split('/').map(s => s.trim()).filter(Boolean).join('/');
+}
+
 // Serialize a front-matter block (only when there's something to record) + body.
 function serializeFrontMatter(data, body) {
     const lines = [];
     if (data.title) lines.push(`title: ${data.title}`);
     if (data.tags && data.tags.length) lines.push(`tags: [${data.tags.join(', ')}]`);
+    if (data.collection) lines.push(`collection: ${data.collection}`);
     const front = lines.length ? `---\n${lines.join('\n')}\n---\n\n` : '';
     return front + (body || '');
 }
 
 // Read a project's metadata from its files map.
-// → { title, tags:[], description, hasThumb, thumbnailData }
+// → { title, tags:[], collection, description, hasThumb, thumbnailData }
 function readProjectMeta(files) {
     const { data, body } = parseFrontMatter(files ? files[META_FILE] : '');
     const thumb = files ? files[THUMB_FILE] : null;
     return {
         title: data.title || '',
         tags: Array.isArray(data.tags) ? data.tags : [],
+        collection: normalizeCollection(data.collection),
         description: (body || '').trim(),
         hasThumb: typeof thumb === 'string' && thumb.startsWith('data:'),
         thumbnailData: thumb || null
     };
 }
 
-// Write title/tags/description back into files[README.md] (mutates `files`).
-// Removes the file entirely when nothing is left, to avoid an empty README.
-function writeProjectMeta(files, { title = '', tags = [], description = '' } = {}) {
+// Write title/tags/collection/description back into files[README.md] (mutates
+// `files`). Removes the file entirely when nothing is left, to avoid an empty README.
+function writeProjectMeta(files, { title = '', tags = [], collection = '', description = '' } = {}) {
     const cleanTags = (tags || []).map(t => String(t).trim()).filter(Boolean);
+    const coll = normalizeCollection(collection);
     const body = String(description || '').trim();
-    if (!title && !cleanTags.length && !body) { delete files[META_FILE]; return; }
-    files[META_FILE] = serializeFrontMatter({ title, tags: cleanTags }, body ? body + '\n' : '');
+    if (!title && !cleanTags.length && !coll && !body) { delete files[META_FILE]; return; }
+    files[META_FILE] = serializeFrontMatter({ title, tags: cleanTags, collection: coll }, body ? body + '\n' : '');
 }
 
 // Normalise a free-text tag input ("a, b ,,c") into a clean list.
 function parseTagInput(str) {
     return String(str || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// Minimal, dependency-free Markdown → HTML for reading a sketch's description
+// (Projects browser + exported gallery). Covers headings, bold/italic, inline &
+// fenced code, links, lists and blockquotes — enough for typical READMEs. Source
+// is HTML-escaped first, so only the tags we insert are live (no injection).
+function mdToHtml(md) {
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inline = s => esc(s)
+        .replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*(?!\s)([^*]+?)\*/g, '$1<em>$2</em>')
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`);
+    const lines = String(md || '').replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let i = 0, para = [], listType = null;
+    const flushPara = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+    const closeList = () => { if (listType) { out.push(`</${listType}>`); listType = null; } };
+    while (i < lines.length) {
+        const line = lines[i];
+        if (/^```/.test(line)) {
+            flushPara(); closeList();
+            const buf = []; i++;
+            while (i < lines.length && !/^```/.test(lines[i])) { buf.push(esc(lines[i])); i++; }
+            i++;   // skip closing fence
+            out.push(`<pre><code>${buf.join('\n')}</code></pre>`);
+            continue;
+        }
+        const h = /^(#{1,6})\s+(.*)$/.exec(line);
+        if (h) { flushPara(); closeList(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+        const ul = /^[-*+]\s+(.*)$/.exec(line);
+        const ol = /^\d+\.\s+(.*)$/.exec(line);
+        if (ul || ol) {
+            flushPara();
+            const want = ul ? 'ul' : 'ol';
+            if (listType && listType !== want) closeList();
+            if (!listType) { listType = want; out.push(`<${want}>`); }
+            out.push(`<li>${inline((ul || ol)[1])}</li>`);
+            i++; continue;
+        }
+        const bq = /^>\s?(.*)$/.exec(line);
+        if (bq) { flushPara(); closeList(); out.push(`<blockquote>${inline(bq[1])}</blockquote>`); i++; continue; }
+        if (/^\s*$/.test(line)) { flushPara(); closeList(); i++; continue; }
+        para.push(line); i++;
+    }
+    flushPara(); closeList();
+    return out.join('\n');
 }
