@@ -759,7 +759,7 @@ let projectFilter = '';
 let projectCollection = '';               // '' = all; UNCOLLECTED = only projects with no collection
 let projectTags = new Set();              // selected tag facets (AND)
 const projThumbCache = {};                // id -> dataURL | null (lazy, only for shown rows)
-const UNCOLLECTED = ' none';
+const UNCOLLECTED = ' none';
 
 const projTagsOf = (p) => Array.isArray(p.tags) ? p.tags : [];
 const projCollOf = (p) => p.collection || '';
