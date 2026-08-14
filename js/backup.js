@@ -67,31 +67,11 @@ function buildGalleryHtml(projects) {
         folder: p.folder,
         title: p.title || p.name,
         tags: p.tags || [],
+        collection: p.collection || '',
         hasThumb: !!p.hasThumb,
         descHtml: p.description ? mdToHtml(p.description) : '',
         excerpt: descExcerpt(p.description || '')
     }));
-    const cards = data.map((p, idx) => {
-        const href  = encodeURIComponent(p.folder) + '/';
-        const title = escapeHtml(p.title);
-        const thumb = p.hasThumb
-            ? `<img loading="lazy" src="${href}thumbnail.png" alt="${title}" />`
-            : `<span class="thumb-ph">${title}</span>`;
-        const tags = p.tags.length
-            ? `<div class="tags">${p.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
-            : '';
-        const desc = p.excerpt ? `<p class="desc">${escapeHtml(p.excerpt)}</p>` : '';
-        return `      <article class="card">
-        <button class="thumb" data-detail="${idx}" aria-label="Details for ${title}">${thumb}</button>
-        <h2><button class="linkish" data-detail="${idx}">${title}</button></h2>
-        ${tags}
-        ${desc}
-        <div class="actions">
-          <a class="btn" href="${href}" target="_blank" rel="noopener" title="Run this sketch standalone">▶ Run</a>
-          <a class="btn primary" data-edit="${idx}" href="#" title="Open in a p5front editor">Edit</a>
-        </div>
-      </article>`;
-    }).join('\n');
     const payload = JSON.stringify(data).replace(/</g, '\\u003c');
     const count = data.length;
     return `<!DOCTYPE html>
@@ -103,11 +83,31 @@ function buildGalleryHtml(projects) {
   <style>
     :root { --fg:#1a1c20; --soft:#888; --line:#e2e5ea; --accent:#d63384; --card:#fff; --bg:#fafbfc; --soft-bg:#eef0f3; }
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 1080px; margin: 0 auto; padding: 40px 20px; line-height: 1.5; background: var(--bg); color: var(--fg); }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 1140px; margin: 0 auto; padding: 40px 20px; line-height: 1.5; background: var(--bg); color: var(--fg); }
     h1 { font-size: 1.5rem; margin: 0 0 .2rem; }
     .meta { color: var(--soft); font-size: .85rem; margin: 0 0 1rem; }
     .instance { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--soft); margin: 0 0 1.8rem; flex-wrap: wrap; }
     .instance input { font: inherit; font-size: .82rem; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 280px; flex: 1; }
+    /* Browser: collection rail + main (filter, tag facets, grid) */
+    .browser { display: grid; grid-template-columns: 200px 1fr; gap: 26px; align-items: start; }
+    .rail { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 2px; }
+    .rail button { text-align: left; border: 0; background: none; font: inherit; color: var(--fg); cursor: pointer; padding: 6px 10px; border-radius: 7px; display: flex; justify-content: space-between; gap: 8px; }
+    .rail button:hover { background: var(--soft-bg); }
+    .rail button.active { background: var(--accent); color: #fff; }
+    .rail .n { color: var(--soft); font-size: .8em; }
+    .rail button.active .n { color: rgba(255,255,255,.85); }
+    .subhead { margin-bottom: 12px; }
+    .subhead input { font: inherit; width: 100%; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+    .facets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .facet { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 3px 11px; font-size: .78rem; cursor: pointer; }
+    .facet:hover { border-color: var(--accent); }
+    .facet.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .facet .fn { opacity: .7; }
+    .empty { color: var(--soft); padding: 30px 4px; }
+    @media (max-width: 640px) {
+      .browser { grid-template-columns: 1fr; }
+      .rail { position: static; flex-direction: row; flex-wrap: wrap; }
+    }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .thumb { border: 0; padding: 0; cursor: pointer; display: block; width: 100%; aspect-ratio: 1 / 1; background: var(--soft-bg); overflow: hidden; }
@@ -153,8 +153,13 @@ function buildGalleryHtml(projects) {
   <h1>p5front projects</h1>
   <p class="meta">${count} sketch${count === 1 ? '' : 'es'} &middot; exported ${new Date().toISOString().slice(0, 10)}</p>
   <label class="instance">Edit opens in: <input id="p5front-url" type="url" spellcheck="false" placeholder="https://your-p5front-instance/" /></label>
-  <div class="grid">
-${cards}
+  <div class="browser">
+    <aside id="rail" class="rail"></aside>
+    <div class="main">
+      <div class="subhead"><input id="q" type="text" placeholder="Filter by name…" /></div>
+      <div id="facets" class="facets"></div>
+      <div id="grid" class="grid"></div>
+    </div>
   </div>
 
   <div id="detail" class="modal" role="dialog" aria-modal="true">
@@ -176,7 +181,7 @@ ${cards}
     var PROJECTS = ${payload};
     var CANONICAL_DEFAULT = ${JSON.stringify(CANONICAL_P5FRONT)};
     var LS_KEY = 'p5front_gallery_instance';
-    var repoRoot = new URL('.', location.href).href;
+    var repoRoot = ''; try { repoRoot = new URL('.', location.href).href; } catch (e) {}
     var urlInput = document.getElementById('p5front-url');
     urlInput.value = localStorage.getItem(LS_KEY) || CANONICAL_DEFAULT;
     urlInput.addEventListener('change', function () { localStorage.setItem(LS_KEY, urlInput.value.trim()); });
@@ -194,6 +199,104 @@ ${cards}
     }
     function openEdit(folder) { var u = editUrl(folder); if (u !== '#') window.open(u, '_blank', 'noopener'); }
 
+    // ---- Filtering by collection (rail) + tags (facets) + name -------------
+    var UNCOLLECTED = {};               // JS-only sentinel (never round-trips through the DOM)
+    var activeColl = '';                // '' = all; UNCOLLECTED = uncollected; else a collection path
+    var activeTags = [];                // selected tags (AND-combined)
+    var textFilter = '';
+    var railNodes = [];                 // rail button index → its collection value
+
+    function collOf(p) { return p.collection || ''; }
+    function inColl(p) {
+      if (activeColl === UNCOLLECTED) return !collOf(p);
+      if (!activeColl) return true;
+      var c = collOf(p);
+      return c === activeColl || c.indexOf(activeColl + '/') === 0;
+    }
+    function matches(p) {
+      if (textFilter && (String(p.title || '')).toLowerCase().indexOf(textFilter) < 0) return false;
+      if (!inColl(p)) return false;
+      for (var i = 0; i < activeTags.length; i++) if ((p.tags || []).indexOf(activeTags[i]) < 0) return false;
+      return true;
+    }
+    function countUnder(n) {
+      return PROJECTS.filter(function (p) { var c = collOf(p); return c === n || c.indexOf(n + '/') === 0; }).length;
+    }
+
+    function renderRail() {
+      var nodes = {}, uncollected = 0;
+      PROJECTS.forEach(function (p) {
+        var c = collOf(p);
+        if (!c) { uncollected++; return; }
+        var parts = c.split('/');
+        for (var i = 1; i <= parts.length; i++) nodes[parts.slice(0, i).join('/')] = 1;
+      });
+      var items = [{ label: 'All sketches', value: '', depth: 0, count: PROJECTS.length }];
+      Object.keys(nodes).sort().forEach(function (n) {
+        items.push({ label: n.split('/').pop(), value: n, depth: n.split('/').length, count: countUnder(n) });
+      });
+      if (uncollected) items.push({ label: 'Uncollected', value: UNCOLLECTED, depth: 0, count: uncollected });
+      railNodes = items;
+      var rail = document.getElementById('rail');
+      rail.innerHTML = items.map(function (it, i) {
+        var active = (it.value === activeColl) ? ' active' : '';
+        return '<button class="ri' + active + '" data-i="' + i + '" style="padding-left:' + (8 + it.depth * 14) + 'px">' +
+               '<span>' + esc(it.label) + '</span><span class="n">' + it.count + '</span></button>';
+      }).join('');
+      rail.querySelectorAll('.ri').forEach(function (b) {
+        b.addEventListener('click', function () { activeColl = railNodes[+b.dataset.i].value; activeTags = []; renderAll(); });
+      });
+    }
+
+    function renderFacets() {
+      var counts = {};
+      PROJECTS.forEach(function (p) { if (inColl(p)) (p.tags || []).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; }); });
+      var tags = Object.keys(counts).sort();
+      var el = document.getElementById('facets');
+      if (!tags.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.innerHTML = tags.map(function (t) {
+        var active = activeTags.indexOf(t) >= 0 ? ' active' : '';
+        return '<button class="facet' + active + '" data-tag="' + esc(t) + '">' + esc(t) + ' <span class="fn">' + counts[t] + '</span></button>';
+      }).join('');
+      el.querySelectorAll('.facet').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var t = b.dataset.tag, i = activeTags.indexOf(t);
+          if (i >= 0) activeTags.splice(i, 1); else activeTags.push(t);
+          renderAll();
+        });
+      });
+    }
+
+    function cardHtml(p, idx) {
+      var href = encodeURIComponent(p.folder) + '/';
+      var title = esc(p.title);
+      var thumb = p.hasThumb
+        ? '<img loading="lazy" src="' + href + 'thumbnail.png" alt="' + title + '" />'
+        : '<span class="thumb-ph">' + title + '</span>';
+      var tags = p.tags.length
+        ? '<div class="tags">' + p.tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('') + '</div>' : '';
+      var desc = p.excerpt ? '<p class="desc">' + esc(p.excerpt) + '</p>' : '';
+      return '<article class="card">' +
+        '<button class="thumb" data-detail="' + idx + '" aria-label="Details for ' + title + '">' + thumb + '</button>' +
+        '<h2><button class="linkish" data-detail="' + idx + '">' + title + '</button></h2>' +
+        tags + desc +
+        '<div class="actions">' +
+        '<a class="btn" href="' + href + '" target="_blank" rel="noopener" title="Run this sketch standalone">▶ Run</a>' +
+        '<a class="btn primary" data-edit="' + idx + '" href="#" title="Open in a p5front editor">Edit</a>' +
+        '</div></article>';
+    }
+
+    function renderGrid() {
+      var html = '';
+      PROJECTS.forEach(function (p, idx) { if (matches(p)) html += cardHtml(p, idx); });
+      document.getElementById('grid').innerHTML = html || '<div class="empty">No sketches match.</div>';
+    }
+
+    function renderAll() { renderRail(); renderFacets(); renderGrid(); }
+
+    document.getElementById('q').addEventListener('input', function (e) { textFilter = e.target.value.trim().toLowerCase(); renderGrid(); });
+
     var modal = document.getElementById('detail');
     function openDetail(idx) {
       var p = PROJECTS[idx];
@@ -209,15 +312,17 @@ ${cards}
     }
     function closeDetail() { modal.style.display = 'none'; }
 
-    document.querySelectorAll('[data-detail]').forEach(function (el) {
-      el.addEventListener('click', function () { openDetail(+el.dataset.detail); });
-    });
-    document.querySelectorAll('[data-edit]').forEach(function (a) {
-      a.addEventListener('click', function (e) { e.preventDefault(); openEdit(PROJECTS[+a.dataset.edit].folder); });
+    // Grid is re-rendered on every filter change, so use event delegation.
+    document.getElementById('grid').addEventListener('click', function (e) {
+      var d = e.target.closest('[data-detail]'), ed = e.target.closest('[data-edit]');
+      if (ed) { e.preventDefault(); openEdit(PROJECTS[+ed.dataset.edit].folder); return; }
+      if (d) openDetail(+d.dataset.detail);
     });
     document.getElementById('d-close').addEventListener('click', closeDetail);
     modal.addEventListener('click', function (e) { if (e.target === modal) closeDetail(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
+
+    renderAll();
   })();
   </script>
 </body>
@@ -256,6 +361,7 @@ async function exportProjects() {
             folder, id: p.id, name: p.name || p.id,
             origin: p.origin || 'native', lastModified: p.lastModified || Date.now(),
             title: meta.title || '', tags: meta.tags || [],
+            collection: meta.collection || '',
             description: meta.description || '', hasThumb: !!meta.hasThumb,
             files: Object.keys(rec.files)   // for ?repo= loading into a canonical p5front
         });
