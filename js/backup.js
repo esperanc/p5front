@@ -62,18 +62,13 @@ const CANONICAL_P5FRONT = 'https://esperanc.github.io/p5front/';
 // mdToHtml() (Markdown → HTML for the gallery reading view) lives in meta.js so
 // the in-app Projects browser and the exported gallery share one renderer.
 
-function buildGalleryHtml(projects) {
-    const data = projects.map(p => ({
-        folder: p.folder,
-        title: p.title || p.name,
-        tags: p.tags || [],
-        collection: p.collection || '',
-        hasThumb: !!p.hasThumb,
-        descHtml: p.description ? mdToHtml(p.description) : '',
-        excerpt: descExcerpt(p.description || '')
-    }));
-    const payload = JSON.stringify(data).replace(/</g, '\\u003c');
-    const count = data.length;
+// Generic gallery template. It reads p5front.json at runtime (single source of
+// truth — edit the manifest and the gallery reflects it, no need to regenerate
+// this file). mdToHtml/descExcerpt are embedded verbatim (via toString) so the
+// standalone page renders each sketch's markdown with no dependency.
+// NOTE: needs the folder served over http(s); opened from file:// the manifest
+// fetch is blocked and the page shows a hosting hint instead.
+function buildGalleryHtml() {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -151,7 +146,7 @@ function buildGalleryHtml(projects) {
 </head>
 <body>
   <h1>p5front projects</h1>
-  <p class="meta">${count} sketch${count === 1 ? '' : 'es'} &middot; exported ${new Date().toISOString().slice(0, 10)}</p>
+  <p class="meta" id="meta">Loading…</p>
   <label class="instance">Edit opens in: <input id="p5front-url" type="url" spellcheck="false" placeholder="https://your-p5front-instance/" /></label>
   <div class="browser">
     <aside id="rail" class="rail"></aside>
@@ -178,7 +173,9 @@ function buildGalleryHtml(projects) {
 
   <script>
   (function () {
-    var PROJECTS = ${payload};
+    var PROJECTS = [];                       // filled from p5front.json at runtime
+    ${mdToHtml.toString()}
+    ${descExcerpt.toString()}
     var CANONICAL_DEFAULT = ${JSON.stringify(CANONICAL_P5FRONT)};
     var LS_KEY = 'p5front_gallery_instance';
     var repoRoot = ''; try { repoRoot = new URL('.', location.href).href; } catch (e) {}
@@ -322,7 +319,27 @@ function buildGalleryHtml(projects) {
     modal.addEventListener('click', function (e) { if (e.target === modal) closeDetail(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDetail(); });
 
-    renderAll();
+    // Load the manifest (single source of truth), then render.
+    function toRender(mp) {
+      return { folder: mp.folder, title: mp.title || mp.name || mp.folder, tags: mp.tags || [],
+               collection: mp.collection || '', hasThumb: !!mp.hasThumb,
+               descHtml: mp.description ? mdToHtml(mp.description) : '', excerpt: descExcerpt(mp.description || '') };
+    }
+    fetch('p5front.json', { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (m) {
+        PROJECTS = (m.projects || []).map(toRender);
+        var date = String(m.createdAt || '').slice(0, 10);
+        document.getElementById('meta').textContent =
+          PROJECTS.length + ' sketch' + (PROJECTS.length === 1 ? '' : 'es') + (date ? ' · exported ' + date : '');
+        renderAll();
+      })
+      .catch(function (e) {
+        document.getElementById('meta').textContent = '';
+        document.getElementById('grid').innerHTML =
+          '<div class="empty">Could not load <code>p5front.json</code> (' + esc(String((e && e.message) || e)) +
+          ').<br>Host this folder on a web server — opening it directly from disk (file://) blocks the manifest fetch.</div>';
+      });
   })();
   </script>
 </body>
@@ -370,7 +387,7 @@ async function exportProjects() {
     if (!manifest.projects.length) { alert('Nothing to export.'); return; }
 
     zip.file('p5front.json', JSON.stringify(manifest, null, 2));
-    zip.file('index.html', buildGalleryHtml(manifest.projects));
+    zip.file('index.html', buildGalleryHtml());
     // Disable GitHub Pages' Jekyll so every file (notably front-matter README.md)
     // is served verbatim — otherwise Jekyll renders README.md to README.html and
     // the raw .md 404s, breaking ?repo= loading of that project's metadata.
