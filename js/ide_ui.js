@@ -49,6 +49,42 @@ function setupEditor() {
         fontSize: '13px', showPrintMargin: false, useSoftTabs: true, tabSize: 2,
         wrap: false, highlightActiveLine: true
     });
+    // Reindent (see indent.js) — Ace ships an unbound `autoindent` command, but
+    // it flattens HTML/Markdown, so bind our guarded version instead.
+    editor.commands.addCommand({
+        name: 'reindent',
+        bindKey: { win: 'Ctrl-Shift-F', mac: 'Command-Shift-F' },
+        exec: () => reindentCurrentFile()
+    });
+
+    // App-level commands. `readOnly: true` means "still allowed while the editor
+    // is read-only" (binary preview) — none of these touch the buffer. They are
+    // documented by the Shortcuts panel, which reads these very bindings.
+    editor.commands.addCommand({
+        name: 'runsketch', readOnly: true,
+        bindKey: { win: 'Ctrl-Enter', mac: 'Command-Enter' },
+        exec: () => { runSketch(); return true; }
+    });
+    editor.commands.addCommand({
+        name: 'stopsketch', readOnly: true,
+        bindKey: { win: 'Ctrl-Shift-Enter', mac: 'Command-Shift-Enter' },
+        exec: () => { stopSketch(); return true; }
+    });
+    // Edits autosave 500 ms after typing; this is for the reflex, and stops the
+    // browser's own "Save page" dialog from opening over the IDE.
+    editor.commands.addCommand({
+        name: 'savesketch', readOnly: true,
+        bindKey: { win: 'Ctrl-S', mac: 'Command-S' },
+        exec: () => { clearTimeout(_saveTimer); saveProject(); return true; }
+    });
+    // Ace binds Ctrl/Cmd-, to its own raw settings overlay, which bypasses (and
+    // silently fights) our persisted preferences. Drop it and open ours.
+    editor.commands.removeCommand('showSettingsMenu');
+    editor.commands.addCommand({
+        name: 'showpreferences', readOnly: true,
+        bindKey: { win: 'Ctrl-,', mac: 'Command-,' },
+        exec: () => { openSettingsModal(); return true; }
+    });
     // Editor-level change fires for whichever session is current.
     editor.on('change', () => {
         if (!bufferFile) return;   // binary placeholder or nothing loaded
@@ -164,6 +200,7 @@ function openFile(path) {
     const label = $('current-file-label');
     if (label) label.textContent = path;
     lintCurrentFile();
+    updateReindentButton();
     renderTree();
 }
 
@@ -969,23 +1006,51 @@ async function duplicateProject(id) {
 // -----------------------------------------------------------------------------
 // PREFERENCES MODAL — theme + editor font/size/tabs (settings.js owns editor prefs).
 // -----------------------------------------------------------------------------
+// Mirror the stored preferences into the form controls.
+function populateSettings() {
+    $('set-theme').value        = getTheme();
+    $('set-font-family').value  = editorSettings.fontFamily;
+    $('set-font-size').value    = editorSettings.fontSize;
+    $('set-tab-size').value     = editorSettings.tabSize;
+    $('set-soft-tabs').checked  = editorSettings.softTabs;
+    $('set-wrap').checked       = editorSettings.wrap;
+    $('set-invisibles').checked = editorSettings.showInvisibles;
+    $('set-lint').checked       = editorSettings.lint;
+}
+
+// Opened from the gear button and from Ctrl/Cmd-, — see setupEditor.
+function openSettingsModal(tab) {
+    populateSettings();
+    $('settings-overlay').style.display = 'flex';
+    showSettingsTab(tab || 'prefs');
+}
+
+// Tabs: Preferences | Shortcuts | About (the last two live in help.js).
+function showSettingsTab(tab) {
+    document.querySelectorAll('#settings-overlay .tab-item').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === tab));
+    ['prefs', 'shortcuts', 'about'].forEach(t => {
+        const panel = $('tab-' + t);
+        if (panel) panel.hidden = (t !== tab);
+    });
+    $('settings-title').textContent =
+        { prefs: 'Preferences', shortcuts: 'Keyboard shortcuts', about: 'About p5front' }[tab];
+    // Rendered on show: both panels report live state (key bindings, storage use).
+    if (tab === 'shortcuts') renderShortcuts();
+    if (tab === 'about')     renderAbout();
+}
+
 function setupSettingsModal() {
     const overlay = $('settings-overlay');
 
-    function populate() {
-        $('set-theme').value       = getTheme();
-        $('set-font-family').value = editorSettings.fontFamily;
-        $('set-font-size').value   = editorSettings.fontSize;
-        $('set-tab-size').value    = editorSettings.tabSize;
-        $('set-soft-tabs').checked = editorSettings.softTabs;
-        $('set-wrap').checked      = editorSettings.wrap;
-        $('set-invisibles').checked = editorSettings.showInvisibles;
-        $('set-lint').checked      = editorSettings.lint;
-    }
-
-    $('settings-btn').onclick   = () => { populate(); overlay.style.display = 'flex'; };
+    $('settings-btn').onclick   = () => openSettingsModal('prefs');
     $('close-settings').onclick = () => { overlay.style.display = 'none'; };
     overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+    document.querySelectorAll('#settings-overlay .tab-item').forEach(b =>
+        b.onclick = () => showSettingsTab(b.dataset.tab));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && overlay.style.display === 'flex') overlay.style.display = 'none';
+    });
 
     $('set-theme').onchange       = (e) => setTheme(e.target.value);
     $('set-font-family').onchange = (e) => updateSetting('fontFamily', e.target.value);
@@ -1258,6 +1323,7 @@ function wireControls() {
     $('export-btn').onclick = exportProject;
     $('share-btn').onclick  = shareProject;
     $('add-file').onclick   = openNewFileModal;
+    $('reindent-btn').onclick = () => { reindentCurrentFile(); editor.focus(); };
     setupSettingsModal();
 
     // New file modal

@@ -20,10 +20,12 @@ p5front can **import and export project zips** from the [p5.js Web Editor](https
 - 🏷️ **Per-sketch metadata** — give each sketch a title, tags, a **collection** (folder-like path), a **Markdown description**, and a **thumbnail** snapped from the running canvas, all edited in the **Info** dialog. Stored inside the project, so they travel with export/import.
 - 🔎 **Organize with collections & tags** — the **Projects** browser has a collections tree, tag facets and a name filter, and lets you read a sketch's rendered description before opening it.
 - 🧑‍💻 **Ace editor** with per-language syntax highlighting, **per-file undo history & cursor position**, and a modern **linter** (Acorn — understands ES2022+ like static/private class fields).
+- ⇥ **Reindent** the current file — or just the selection — with **Ctrl/Cmd + Shift + F** or the button in the editor bar. Indentation only: nothing is joined, split or reflowed, and one undo puts it all back.
 - 🖼️ **View mode** — open a sketch full-window in a separate tab, with a collapsible console.
 - 🔗 **Share via URL** — the whole project is compressed into a link (unreferenced assets are stripped to keep it small). Or load a project from a hosted zip/repository (see [URL parameters](#url-parameters)).
 - 🗄️ **Export / import all projects** — download every project as a single zip that unzips into a **directly hostable, runnable repository** with a **visual gallery** (thumbnails, rendered descriptions, and "Edit in p5front" links); re-import it anywhere.
-- 🎛️ **Preferences** — theme (auto / light / dark), editor font family & size, tab size, soft tabs, word wrap, show invisibles, syntax checking.
+- 🎛️ **Preferences** — theme (auto / light / dark), editor font family & size, tab size, soft tabs, word wrap, show invisibles, syntax checking. The same dialog holds a **Shortcuts** tab (read live from the editor's keymap, so it can't go stale) and an **About** tab with library versions and local storage use.
+- ⌨️ **[Keyboard shortcuts](#keyboard-shortcuts)** for running, stopping and saving a sketch, reindenting, commenting, folding and multiple cursors.
 - ↔️ **Resizable, collapsible panels** and a drag-and-drop file sidebar.
 - 🚀 **Static deploy** — works from any static host, including GitHub Pages.
 
@@ -191,6 +193,7 @@ Notes:
 
 - The Ace linter is **Acorn-based** and reports real syntax errors only — it won't false-flag modern syntax (static class fields, private `#fields`, `??`, optional chaining, etc.). Toggle it in **Preferences → Check JS syntax**.
 - Each open file keeps its own **undo history, cursor and scroll position**.
+- **Reindent** (**Ctrl/Cmd + Shift + F**, or the ⇥ button on the editor bar) re-does the leading whitespace of the whole file, or of the selected lines, using the language's own indentation rules. It only ever changes indentation — no line is joined, split or otherwise reformatted — and the whole pass is a single undo step. Two things are deliberately left alone: the body of a **template literal** (its whitespace is part of the string) and the inside of a **block comment**, which is shifted along with the comment so ASCII art and commented-out code keep their alignment. It is available for JavaScript, JSON, CSS and GLSL; for HTML, Markdown and plain text the button is disabled, because those Ace modes have no indentation rules of their own and running them would flatten the file.
 - **Script order is auto-repaired.** Some multi-file exports (notably a few from OpenProcessing) list their `<script>` tags in an order that doesn't match dependency order — a symbol defined at the top level of one file is used at the top level of another that loads first (e.g. `class B extends A` with `A` loaded later). p5front analyses the local scripts and reorders them by dependency on load, so these sketches run without manual fixing.
 - **p5.js 2.0 removed `preload()`.** Load assets inside an `async setup()` instead:
 
@@ -202,6 +205,58 @@ Notes:
     image(img, 0, 0);
   }
   ```
+
+---
+
+## Keyboard shortcuts
+
+Shortcuts act on the editor, so click in it first. The **Preferences → Shortcuts** tab
+(gear icon, or `Ctrl`/`⌘` + `,`) shows this same list read live from the editor's keymap,
+so it is always the authoritative version.
+
+**Sketch**
+
+| Action | Windows / Linux | macOS |
+|---|---|---|
+| Run the sketch | `Ctrl+Enter` | `⌘↵` |
+| Stop the sketch | `Ctrl+Shift+Enter` | `⌘⇧↵` |
+| Save now (edits also autosave) | `Ctrl+S` | `⌘S` |
+| Open Preferences | `Ctrl+,` | `⌘,` |
+
+**Editing**
+
+| Action | Windows / Linux | macOS |
+|---|---|---|
+| Reindent file or selection | `Ctrl+Shift+F` | `⌘⇧F` |
+| Comment / uncomment lines | `Ctrl+/` | `⌘/` |
+| Block comment | `Ctrl+Shift+/` | `⌘⇧/` |
+| Delete line | `Ctrl+D` | `⌘D` |
+| Duplicate line or selection | `Ctrl+Shift+D` | `⌘⇧D` |
+| Move lines up / down | `Alt+↑` / `Alt+↓` | `⌥↑` / `⌥↓` |
+| Indent / outdent block | `Ctrl+]` / `Ctrl+[` | `⌃]` / `⌃[` |
+| Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` | `⌘Z` / `⌘⇧Z` |
+
+**Search & navigation**
+
+| Action | Windows / Linux | macOS |
+|---|---|---|
+| Find | `Ctrl+F` | `⌘F` |
+| Find next / previous | `Ctrl+K` / `Ctrl+Shift+K` | `⌘G` / `⌘⇧G` |
+| Replace | `Ctrl+H` | `⌘⌥F` |
+| Go to line | `Ctrl+L` | `⌘L` |
+| Jump to matching bracket | `Ctrl+\` | `⌘\` |
+| Fold / unfold | `Alt+L` / `Alt+Shift+L` | `⌘⌥L` / `⌘⌥⇧L` |
+
+**Multiple cursors & selection**
+
+| Action | Windows / Linux | macOS |
+|---|---|---|
+| Add cursor above / below | `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | `⌃⌥↑` / `⌃⌥↓` |
+| Select next occurrence | `Ctrl+Alt+→` | `⌃⌥→` |
+| Select whole line | `Ctrl+Shift+L` | `⌘⇧L` |
+| Select all | `Ctrl+A` | `⌘A` |
+
+Dialogs close with `Esc`; the New file and Add library dialogs submit with `Enter`.
 
 ---
 
@@ -222,6 +277,8 @@ p5front/
     ├── share.js      # URL sharing (LZString compression)
     ├── backup.js     # Export/import all projects; the gallery generator
     ├── settings.js   # Editor preferences
+    ├── indent.js     # Reindent the current file / selection (mode-driven)
+    ├── help.js       # Shortcuts & About panels of the Preferences dialog
     ├── reorder.js    # Dependency-order repair for multi-file <script> tags
     └── ide_ui.js     # Editor wiring: file tree, run/stop, panels, linter, Projects browser
 ```
