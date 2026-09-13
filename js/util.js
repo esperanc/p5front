@@ -2,9 +2,20 @@
 // UTIL — small shared helpers (classic script, no modules)
 // =============================================================================
 
+// Fold accented / compatibility characters to ASCII look-alikes (é → e, ß → ss,
+// ﬁ → fi, full-width Ａ → A). Characters with no ASCII equivalent are left as is.
+const _ASCII_FOLD = { 'ß': 'ss', 'æ': 'ae', 'Æ': 'AE', 'œ': 'oe', 'Œ': 'OE', 'ø': 'o', 'Ø': 'O',
+                      'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D', 'þ': 'th', 'Þ': 'Th' };
+function foldToAscii(text) {
+    return String(text)
+        .normalize('NFKD')                          // é → e + combining accent
+        .replace(/[\u0300-\u036f]/g, '')            // drop the combining marks
+        .replace(/[ßæÆœŒøØłŁđĐþÞ]/g, c => _ASCII_FOLD[c]);
+}
+
 // Turn arbitrary text into a URL/ID-safe slug.
 function slugify(text) {
-    return String(text)
+    return foldToAscii(text)
         .toLowerCase()
         .trim()
         .replace(/\s+/g, '-')

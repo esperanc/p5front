@@ -2,7 +2,7 @@
 // BACKUP — export every project as a single, directly-runnable static repository,
 // and import such a repository back into p5front.
 // =============================================================================
-// Export layout (one folder per project, folder name = project name):
+// Export layout (one folder per project, folder name = ASCII-folded project name):
 //
 //   index.html            ← auto-generated gallery linking to each project
 //   p5front.json          ← p5front metadata (auxiliary; folders run without it)
@@ -15,20 +15,23 @@
 //
 // Depends on: JSZip (global), storage.js (getProject/putProject/listProjects/
 // getRegistry/upsertRegistryEntry/resolveCollision/isBinaryValue/isTextPath/
-// mimeForPath), formats.js (synthesizeIndexHtml), util.js (slugify/escapeHtml).
+// mimeForPath), formats.js (synthesizeIndexHtml), util.js (slugify/foldToAscii/
+// escapeHtml).
 // =============================================================================
 
 // ---- Folder-name sanitising ------------------------------------------------
-// Strip characters that are illegal in file paths / on common filesystems,
-// keep spaces and accents, and avoid trailing dots/spaces (Windows).
+// Folder names are ASCII-only: accented names break the gallery links, since
+// unzip/git/servers may store them NFD while p5front.json holds them NFC (the
+// URL then misses the folder). Accents are folded (é → e, ß → ss), any other
+// non-ASCII run becomes '-', characters illegal on common filesystems become
+// spaces, and leading/trailing dots, dashes and spaces are dropped. The real
+// (accented) name survives in the manifest. Returns '' if nothing is left.
 function sanitizeFolderName(name) {
-    let s = String(name || '')
-        .replace(/[\/\\:*?"<>|\x00-\x1f]/g, ' ')
+    return foldToAscii(name || '')
+        .replace(/[^\x20-\x7e]+/g, '-')             // anything else non-ASCII
+        .replace(/[\/\\:*?"<>|]/g, ' ')
         .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/[. ]+$/, '')
-        .trim();
-    return s || 'project';
+        .replace(/^[-. ]+|[-. ]+$/g, '');
 }
 
 function addFilesToZip(folder, files) {
@@ -365,8 +368,8 @@ async function exportProjects() {
         try { rec = await getProject(p.id); } catch (e) { console.warn('skip', p.id, e); continue; }
         if (!rec || !rec.files) continue;
 
-        // Unique, filesystem-safe folder name derived from the project name.
-        let folder = sanitizeFolderName(p.name || p.id);
+        // Unique, ASCII, filesystem-safe folder name derived from the project name.
+        let folder = sanitizeFolderName(p.name) || sanitizeFolderName(p.id) || 'project';
         const base = folder;
         let n = 2;
         while (usedFolders.has(folder.toLowerCase())) folder = `${base} (${n++})`;
