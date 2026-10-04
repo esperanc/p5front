@@ -8,7 +8,7 @@
 // =============================================================================
 
 // p5 version pinned to what the real exports ship with.
-const P5_CDN = 'https://cdn.jsdelivr.net/npm/p5@2.2.3/lib/p5.js';
+const P5_CDN = 'https://cdn.jsdelivr.net/npm/p5@2.3.4/lib/p5.js';
 
 // -----------------------------------------------------------------------------
 // DEFAULT PROJECT — seeded for brand-new projects.
