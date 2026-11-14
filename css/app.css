@@ -318,6 +318,8 @@ body.ide { overflow: hidden; }
 }
 .rail-item:hover { background: var(--bg-soft); }
 .rail-item.active { background: color-mix(in srgb, var(--accept) 16%, transparent); color: var(--accept); }
+.rail-toggle { flex: 0 0 12px; width: 12px; margin-right: -4px; font-size: 10px; color: var(--text-soft); text-align: center; cursor: pointer; }
+.rail-toggle:hover { color: var(--text); }
 .rail-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-count { flex-shrink: 0; font-size: 11px; color: var(--text-soft); }
 .rail-item.active .rail-count { color: var(--accept); }

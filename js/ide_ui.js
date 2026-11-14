@@ -796,6 +796,7 @@ async function shareProject() {
 // -----------------------------------------------------------------------------
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
 let projectFilter = '';
+let collapsedColls = new Set();            // rail folders the user has collapsed (collection paths)
 let projectCollection = '';               // '' = all; UNCOLLECTED = only projects with no collection
 let projectTags = new Set();              // selected tag facets (AND)
 const projThumbCache = {};                // id -> dataURL | null (lazy, only for shown rows)
@@ -857,16 +858,30 @@ function renderCollectionsRail() {
         for (let i = 1; i <= parts.length; i++) nodes.add(parts.slice(0, i).join('/'));
     }
     const countUnder = (n) => all.filter(p => { const c = projCollOf(p); return c === n || c.startsWith(n + '/'); }).length;
-    const item = (label, value, count, depth, active) =>
+    const hasKids = (n) => [...nodes].some(m => m.startsWith(n + '/'));
+    const item = (label, value, count, depth, active, toggle) =>
         `<button class="rail-item${active ? ' active' : ''}" data-coll="${escapeHtml(value)}" style="padding-left:${8 + depth * 14}px">` +
+        (toggle === undefined ? '' : toggle
+            ? `<span class="rail-toggle" data-toggle="${escapeHtml(value)}" title="${collapsedColls.has(value) ? 'Expand' : 'Collapse'}">${collapsedColls.has(value) ? '▸' : '▾'}</span>`
+            : '<span class="rail-toggle"></span>') +
         `<span class="rail-label">${escapeHtml(label)}</span><span class="rail-count">${count}</span></button>`;
 
     const out = [item('All sketches', '', all.length, 0, projectCollection === '')];
-    for (const n of [...nodes].sort())
-        out.push(item(n.split('/').pop(), n, countUnder(n), n.split('/').length, projectCollection === n));
+    for (const n of [...nodes].sort()) {
+        const parts = n.split('/');
+        // Hidden when any ancestor folder is collapsed.
+        if (parts.slice(1).some((_, i) => collapsedColls.has(parts.slice(0, i + 1).join('/')))) continue;
+        out.push(item(parts.pop(), n, countUnder(n), parts.length + 1, projectCollection === n, hasKids(n)));
+    }
     if (uncollected) out.push(item('Uncollected', UNCOLLECTED, uncollected, 0, projectCollection === UNCOLLECTED));
     rail.innerHTML = out.join('');
     rail.querySelectorAll('.rail-item').forEach(b => b.onclick = () => { projectCollection = b.dataset.coll; renderProjectsModal(); });
+    rail.querySelectorAll('.rail-toggle[data-toggle]').forEach(t => t.onclick = (e) => {
+        e.stopPropagation();
+        const k = t.dataset.toggle;
+        collapsedColls.has(k) ? collapsedColls.delete(k) : collapsedColls.add(k);
+        renderCollectionsRail();
+    });
 }
 
 // Tag facets present in the current collection scope, as AND-combining toggles.
