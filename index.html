@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="favicon_io/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="favicon_io/apple-touch-icon.png" />
   <link rel="manifest" href="favicon_io/site.webmanifest" />
-  <link rel="stylesheet" href="css/app.css?v=16" />
+  <link rel="stylesheet" href="css/app.css?v=17" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.3/ace.js"></script>
 </head>
@@ -97,7 +97,14 @@
           <div class="modal-subhead">
             <input id="project-filter" type="text" placeholder="Filter by name…" />
           </div>
-          <div id="proj-facets" class="proj-facets"></div>
+          <div id="proj-facets" class="proj-facets">
+            <div class="facet-bar">
+              <input id="facet-filter" type="text" placeholder="Find tag…" />
+              <button id="facet-sort" class="ghost" title="Toggle tag order">A–Z</button>
+              <button id="facet-clear" class="ghost" title="Deselect all tags">Clear</button>
+            </div>
+            <div id="facet-cloud" class="facet-cloud"></div>
+          </div>
           <ul id="modal-project-list" class="modal-list"></ul>
         </div>
       </div>
@@ -299,6 +306,6 @@
   <script src="js/reorder.js?v=1"></script>
   <script src="js/indent.js?v=1"></script>
   <script src="js/help.js?v=1"></script>
-  <script src="js/ide_ui.js?v=25"></script>
+  <script src="js/ide_ui.js?v=26"></script>
 </body>
 </html>

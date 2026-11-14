@@ -794,6 +794,8 @@ async function shareProject() {
 // -----------------------------------------------------------------------------
 // PROJECTS MODAL — open / delete / new, with date or A–Z sorting.
 // -----------------------------------------------------------------------------
+let facetFilter = '';                      // substring filter for the tag cloud
+let facetSort = localStorage.getItem('p5front_facet_sort') || 'alpha';   // 'alpha' | 'count'
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
 let projectFilter = '';
 const LS_COLLAPSED = 'p5front_collapsed_colls';
@@ -823,7 +825,7 @@ async function backfillProjectMeta() {
 async function openProjectsModal() {
     await saveProject();
     projectFilter = ''; projectCollection = ''; projectTags = new Set();
-    $('project-filter').value = '';
+    $('project-filter').value = ''; facetFilter = ''; $('facet-filter').value = '';
     $('projects-overlay').style.display = 'flex';
     renderProjectsModal();                    // instant, from the registry cache
     await backfillProjectMeta();              // fill any missing derived meta once
@@ -889,17 +891,29 @@ function renderCollectionsRail() {
 }
 
 // Tag facets present in the current collection scope, as AND-combining toggles.
+// Selected tags are pinned first; the cloud scrolls inside a capped area and can
+// be narrowed with the "Find tag" box and ordered A–Z or by count.
 function renderTagFacets() {
-    const el = $('proj-facets');
-    if (!el) return;
+    const el = $('proj-facets'), cloud = $('facet-cloud');
+    if (!el || !cloud) return;
     const counts = {};
     for (const p of listProjects()) if (projInCollection(p)) for (const t of projTagsOf(p)) counts[t] = (counts[t] || 0) + 1;
-    const tags = Object.keys(counts).sort();
-    if (!tags.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    for (const t of projectTags) if (!(t in counts)) counts[t] = 0;     // keep selected tags deselectable
+    const all = Object.keys(counts);
+    if (!all.length) { el.style.display = 'none'; return; }
     el.style.display = '';
-    el.innerHTML = tags.map(t =>
-        `<button class="facet${projectTags.has(t) ? ' active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)} <span class="facet-n">${counts[t]}</span></button>`).join('');
-    el.querySelectorAll('.facet').forEach(b => b.onclick = () => {
+
+    const q = facetFilter.trim().toLowerCase();
+    const tags = all.filter(t => !q || t.toLowerCase().includes(q)).sort((a, b) =>
+        (projectTags.has(b) - projectTags.has(a)) ||
+        (facetSort === 'count' ? counts[b] - counts[a] : 0) ||
+        a.localeCompare(b));
+    $('facet-sort').textContent = facetSort === 'count' ? '# Count' : 'A–Z';
+    $('facet-clear').style.display = projectTags.size ? '' : 'none';
+    cloud.innerHTML = tags.length
+        ? tags.map(t => `<button class="facet${projectTags.has(t) ? ' active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)} <span class="facet-n">${counts[t]}</span></button>`).join('')
+        : '<span class="facet-none">No matching tags</span>';
+    cloud.querySelectorAll('.facet').forEach(b => b.onclick = () => {
         const t = b.dataset.tag;
         projectTags.has(t) ? projectTags.delete(t) : projectTags.add(t);
         renderProjectsModal();
@@ -1395,6 +1409,14 @@ function wireControls() {
     };
     $('projects-overlay').onclick = (e) => { if (e.target === $('projects-overlay')) closeProjectsModal(); };
     $('project-filter').oninput = (e) => { projectFilter = e.target.value; renderProjectsModal(); };
+    $('facet-filter').oninput = (e) => { facetFilter = e.target.value; renderTagFacets(); };
+    $('facet-filter').onkeydown = (e) => { if (e.key === 'Escape' && facetFilter) { e.stopPropagation(); facetFilter = e.target.value = ''; renderTagFacets(); } };
+    $('facet-sort').onclick = () => {
+        facetSort = facetSort === 'alpha' ? 'count' : 'alpha';
+        localStorage.setItem('p5front_facet_sort', facetSort);
+        renderTagFacets();
+    };
+    $('facet-clear').onclick = () => { projectTags.clear(); renderProjectsModal(); };
 
     // Export / import all projects (see backup.js)
     $('export-all').onclick = () => exportProjects();
