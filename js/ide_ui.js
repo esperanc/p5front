@@ -384,7 +384,10 @@ async function runSketch() {
         return;
     }
     placeholder.style.display = 'none';
-    runner.src = `runner/${encodeURIComponent(projectId)}/index.html?t=${Date.now()}`;
+    // No query string: sketches may read their own params (e.g. ?t=). replace() reloads even
+    // when the URL is unchanged; the SW already serves with no-store.
+    const url = `runner/${encodeURIComponent(projectId)}/index.html`;
+    try { runner.contentWindow.location.replace(url); } catch (e) { runner.src = url; }
 }
 
 function stopSketch() {

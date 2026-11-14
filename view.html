@@ -124,7 +124,7 @@
         } else {
           logLine('Service Worker not supported — cannot run.', 'err'); setConsole(true); return;
         }
-        runner.src = `runner/${encodeURIComponent(id)}/index.html?t=${Date.now()}`;
+        runner.src = `runner/${encodeURIComponent(id)}/index.html`;
       }
       run();
     })();
