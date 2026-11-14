@@ -796,7 +796,10 @@ async function shareProject() {
 // -----------------------------------------------------------------------------
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
 let projectFilter = '';
-let collapsedColls = new Set();            // rail folders the user has collapsed (collection paths)
+const LS_COLLAPSED = 'p5front_collapsed_colls';
+let collapsedColls = (() => {              // rail folders the user has collapsed (collection paths)
+    try { return new Set(JSON.parse(localStorage.getItem(LS_COLLAPSED)) || []); } catch (e) { return new Set(); }
+})();
 let projectCollection = '';               // '' = all; UNCOLLECTED = only projects with no collection
 let projectTags = new Set();              // selected tag facets (AND)
 const projThumbCache = {};                // id -> dataURL | null (lazy, only for shown rows)
@@ -880,6 +883,7 @@ function renderCollectionsRail() {
         e.stopPropagation();
         const k = t.dataset.toggle;
         collapsedColls.has(k) ? collapsedColls.delete(k) : collapsedColls.add(k);
+        try { localStorage.setItem(LS_COLLAPSED, JSON.stringify([...collapsedColls])); } catch (e) {}
         renderCollectionsRail();
     });
 }
