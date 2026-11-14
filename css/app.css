@@ -275,7 +275,7 @@ body.ide { overflow: hidden; }
 .modal-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 .modal-head .spacer { flex: 1; }
 .modal-head strong { font-size: 15px; }
-.modal-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+.modal-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1 1 0; min-height: 0; }
 .proj-row {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 10px; border-radius: 8px; cursor: default;
@@ -326,7 +326,7 @@ body.ide { overflow: hidden; }
 .proj-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .proj-facets {
   display: flex; flex-direction: column; gap: 6px; padding: 8px 14px;
-  max-height: 50%; flex: 0 1 auto; min-height: 0; border-bottom: 1px solid var(--border);
+  max-height: 50%; flex: 0 0 auto; border-bottom: 1px solid var(--border);
 }
 .facet-bar { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
 .facet-bar input { flex: 1; min-width: 0; font-size: 12px; padding: 3px 8px; }
