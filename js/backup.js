@@ -93,11 +93,21 @@ function buildGalleryHtml() {
     .rail button:hover { background: var(--soft-bg); }
     .rail button.active { background: var(--accent); color: #fff; }
     .rail .n { color: var(--soft); font-size: .8em; }
+    .rail .lb { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rail .tg { flex: 0 0 16px; width: 16px; margin-right: -4px; font-size: 14px; line-height: 1; text-align: center; color: var(--soft); cursor: pointer; }
+    .rail .tg:hover { color: var(--fg); }
+    .rail button.active .tg { color: rgba(255,255,255,.85); }
     .rail button.active .n { color: rgba(255,255,255,.85); }
     .subhead { margin-bottom: 12px; }
     .subhead input { font: inherit; width: 100%; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-    .facets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-    .facet { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 3px 11px; font-size: .78rem; cursor: pointer; }
+    .facets { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-height: 50vh; }
+    .facet-bar { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+    .facet-bar input { flex: 1; min-width: 0; font: inherit; font-size: .8rem; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
+    .facet-bar button { flex: 0 0 auto; font: inherit; font-size: .75rem; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; cursor: pointer; }
+    .facet-bar button:hover { border-color: var(--accent); color: var(--accent); }
+    .facet-cloud { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+    .facet-none { font-size: .78rem; color: var(--soft); }
+    .facet { flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 3px 11px; font-size: .78rem; cursor: pointer; }
     .facet:hover { border-color: var(--accent); }
     .facet.active { background: var(--accent); border-color: var(--accent); color: #fff; }
     .facet .fn { opacity: .7; }
@@ -155,7 +165,14 @@ function buildGalleryHtml() {
     <aside id="rail" class="rail"></aside>
     <div class="main">
       <div class="subhead"><input id="q" type="text" placeholder="Filter by name…" /></div>
-      <div id="facets" class="facets"></div>
+      <div id="facets" class="facets">
+        <div class="facet-bar">
+          <input id="facet-filter" type="text" placeholder="Find tag…" />
+          <button id="facet-sort" title="Toggle tag order">A–Z</button>
+          <button id="facet-clear" title="Deselect all tags">Clear</button>
+        </div>
+        <div id="facet-cloud" class="facet-cloud"></div>
+      </div>
       <div id="grid" class="grid"></div>
     </div>
   </div>
@@ -205,6 +222,14 @@ function buildGalleryHtml() {
     var activeTags = [];                // selected tags (AND-combined)
     var textFilter = '';
     var railNodes = [];                 // rail button index → its collection value
+    var facetFilter = '';               // substring filter for the tag cloud
+    var facetSort = 'alpha';            // 'alpha' | 'count'
+    var collapsed = {};                 // collapsed rail folders (collection path → true)
+    try {
+      (JSON.parse(localStorage.getItem('p5front_gallery_collapsed')) || []).forEach(function (k) { collapsed[k] = true; });
+      facetSort = localStorage.getItem('p5front_gallery_facet_sort') || 'alpha';
+    } catch (e) {}
+    function saveCollapsed() { try { localStorage.setItem('p5front_gallery_collapsed', JSON.stringify(Object.keys(collapsed))); } catch (e) {} }
 
     function collOf(p) { return p.collection || ''; }
     function inColl(p) {
@@ -232,34 +257,63 @@ function buildGalleryHtml() {
         for (var i = 1; i <= parts.length; i++) nodes[parts.slice(0, i).join('/')] = 1;
       });
       var items = [{ label: 'All sketches', value: '', depth: 0, count: PROJECTS.length }];
-      Object.keys(nodes).sort().forEach(function (n) {
-        items.push({ label: n.split('/').pop(), value: n, depth: n.split('/').length, count: countUnder(n) });
+      var keys = Object.keys(nodes).sort();
+      keys.forEach(function (n) {
+        var parts = n.split('/');
+        // Hidden when any ancestor folder is collapsed.
+        for (var i = 1; i < parts.length; i++) if (collapsed[parts.slice(0, i).join('/')]) return;
+        var kids = keys.some(function (m) { return m.indexOf(n + '/') === 0; });
+        items.push({ label: parts[parts.length - 1], value: n, depth: parts.length, count: countUnder(n), kids: kids });
       });
       if (uncollected) items.push({ label: 'Uncollected', value: UNCOLLECTED, depth: 0, count: uncollected });
       railNodes = items;
       var rail = document.getElementById('rail');
       rail.innerHTML = items.map(function (it, i) {
         var active = (it.value === activeColl) ? ' active' : '';
+        var tg = it.kids === undefined ? ''
+          : it.kids ? '<span class="tg" data-tg="' + i + '" title="' + (collapsed[it.value] ? 'Expand' : 'Collapse') + '">' + (collapsed[it.value] ? '▸' : '▾') + '</span>'
+          : '<span class="tg"></span>';
         return '<button class="ri' + active + '" data-i="' + i + '" style="padding-left:' + (8 + it.depth * 14) + 'px">' +
-               '<span>' + esc(it.label) + '</span><span class="n">' + it.count + '</span></button>';
+               tg + '<span class="lb">' + esc(it.label) + '</span><span class="n">' + it.count + '</span></button>';
       }).join('');
       rail.querySelectorAll('.ri').forEach(function (b) {
         b.addEventListener('click', function () { activeColl = railNodes[+b.dataset.i].value; activeTags = []; renderAll(); });
       });
+      rail.querySelectorAll('.tg[data-tg]').forEach(function (t) {
+        t.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var k = railNodes[+t.dataset.tg].value;
+          if (collapsed[k]) delete collapsed[k]; else collapsed[k] = true;
+          saveCollapsed();
+          renderRail();
+        });
+      });
     }
 
+    // Selected tags are pinned first; the cloud scrolls inside a capped area and
+    // can be narrowed with the "Find tag" box and ordered A–Z or by count.
     function renderFacets() {
       var counts = {};
       PROJECTS.forEach(function (p) { if (inColl(p)) (p.tags || []).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; }); });
-      var tags = Object.keys(counts).sort();
-      var el = document.getElementById('facets');
-      if (!tags.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      activeTags.forEach(function (t) { if (!(t in counts)) counts[t] = 0; });   // keep selected tags deselectable
+      var el = document.getElementById('facets'), cloud = document.getElementById('facet-cloud');
+      var q = facetFilter.trim().toLowerCase();
+      var tags = Object.keys(counts);
+      if (!tags.length) { el.style.display = 'none'; return; }
       el.style.display = '';
-      el.innerHTML = tags.map(function (t) {
+      tags = tags.filter(function (t) { return !q || t.toLowerCase().indexOf(q) >= 0; }).sort(function (a, b) {
+        var sa = activeTags.indexOf(a) >= 0, sb = activeTags.indexOf(b) >= 0;
+        if (sa !== sb) return sa ? -1 : 1;
+        if (facetSort === 'count' && counts[a] !== counts[b]) return counts[b] - counts[a];
+        return a.localeCompare(b);
+      });
+      document.getElementById('facet-sort').textContent = facetSort === 'count' ? '# Count' : 'A–Z';
+      document.getElementById('facet-clear').style.display = activeTags.length ? '' : 'none';
+      cloud.innerHTML = tags.length ? tags.map(function (t) {
         var active = activeTags.indexOf(t) >= 0 ? ' active' : '';
         return '<button class="facet' + active + '" data-tag="' + esc(t) + '">' + esc(t) + ' <span class="fn">' + counts[t] + '</span></button>';
-      }).join('');
-      el.querySelectorAll('.facet').forEach(function (b) {
+      }).join('') : '<span class="facet-none">No matching tags</span>';
+      cloud.querySelectorAll('.facet').forEach(function (b) {
         b.addEventListener('click', function () {
           var t = b.dataset.tag, i = activeTags.indexOf(t);
           if (i >= 0) activeTags.splice(i, 1); else activeTags.push(t);
@@ -267,6 +321,15 @@ function buildGalleryHtml() {
         });
       });
     }
+    var ff = document.getElementById('facet-filter');
+    ff.addEventListener('input', function () { facetFilter = ff.value; renderFacets(); });
+    ff.addEventListener('keydown', function (e) { if (e.key === 'Escape' && facetFilter) { e.stopPropagation(); facetFilter = ff.value = ''; renderFacets(); } });
+    document.getElementById('facet-sort').addEventListener('click', function () {
+      facetSort = facetSort === 'alpha' ? 'count' : 'alpha';
+      try { localStorage.setItem('p5front_gallery_facet_sort', facetSort); } catch (e) {}
+      renderFacets();
+    });
+    document.getElementById('facet-clear').addEventListener('click', function () { activeTags = []; renderAll(); });
 
     function cardHtml(p, idx) {
       var href = encodeURIComponent(p.folder) + '/';
