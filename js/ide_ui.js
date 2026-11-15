@@ -799,9 +799,15 @@ let facetSort = localStorage.getItem('p5front_facet_sort') || 'alpha';   // 'alp
 let projectSort = localStorage.getItem('p5front_sort') || 'date';
 let projectFilter = '';
 const LS_COLLAPSED = 'p5front_collapsed_colls';
-let collapsedColls = (() => {              // rail folders the user has collapsed (collection paths)
-    try { return new Set(JSON.parse(localStorage.getItem(LS_COLLAPSED)) || []); } catch (e) { return new Set(); }
+// Rail folders the user toggled by hand: collection path → collapsed?. Folders not listed
+// use the default — only the first level starts expanded (deeper folders collapsed).
+let collState = (() => {
+    try {
+        const v = JSON.parse(localStorage.getItem(LS_COLLAPSED)) || {};
+        return Array.isArray(v) ? Object.fromEntries(v.map(k => [k, true])) : v;   // older format: list of collapsed paths
+    } catch (e) { return {}; }
 })();
+const isCollapsed = (path) => path in collState ? collState[path] : path.split('/').length >= 2;
 let projectCollection = '';               // '' = all; UNCOLLECTED = only projects with no collection
 let projectTags = new Set();              // selected tag facets (AND)
 const projThumbCache = {};                // id -> dataURL | null (lazy, only for shown rows)
@@ -867,7 +873,7 @@ function renderCollectionsRail() {
     const item = (label, value, count, depth, active, toggle) =>
         `<button class="rail-item${active ? ' active' : ''}" data-coll="${escapeHtml(value)}" style="padding-left:${8 + depth * 14}px">` +
         (toggle === undefined ? '' : toggle
-            ? `<span class="rail-toggle" data-toggle="${escapeHtml(value)}" title="${collapsedColls.has(value) ? 'Expand' : 'Collapse'}">${collapsedColls.has(value) ? '▸' : '▾'}</span>`
+            ? `<span class="rail-toggle" data-toggle="${escapeHtml(value)}" title="${isCollapsed(value) ? 'Expand' : 'Collapse'}">${isCollapsed(value) ? '▸' : '▾'}</span>`
             : '<span class="rail-toggle"></span>') +
         `<span class="rail-label">${escapeHtml(label)}</span><span class="rail-count">${count}</span></button>`;
 
@@ -875,7 +881,7 @@ function renderCollectionsRail() {
     for (const n of [...nodes].sort()) {
         const parts = n.split('/');
         // Hidden when any ancestor folder is collapsed.
-        if (parts.slice(1).some((_, i) => collapsedColls.has(parts.slice(0, i + 1).join('/')))) continue;
+        if (parts.slice(1).some((_, i) => isCollapsed(parts.slice(0, i + 1).join('/')))) continue;
         out.push(item(parts.pop(), n, countUnder(n), parts.length + 1, projectCollection === n, hasKids(n)));
     }
     if (uncollected) out.push(item('Uncollected', UNCOLLECTED, uncollected, 0, projectCollection === UNCOLLECTED));
@@ -884,8 +890,8 @@ function renderCollectionsRail() {
     rail.querySelectorAll('.rail-toggle[data-toggle]').forEach(t => t.onclick = (e) => {
         e.stopPropagation();
         const k = t.dataset.toggle;
-        collapsedColls.has(k) ? collapsedColls.delete(k) : collapsedColls.add(k);
-        try { localStorage.setItem(LS_COLLAPSED, JSON.stringify([...collapsedColls])); } catch (e) {}
+        collState[k] = !isCollapsed(k);
+        try { localStorage.setItem(LS_COLLAPSED, JSON.stringify(collState)); } catch (e) {}
         renderCollectionsRail();
     });
 }

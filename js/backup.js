@@ -224,12 +224,15 @@ function buildGalleryHtml() {
     var railNodes = [];                 // rail button index → its collection value
     var facetFilter = '';               // substring filter for the tag cloud
     var facetSort = 'alpha';            // 'alpha' | 'count'
-    var collapsed = {};                 // collapsed rail folders (collection path → true)
+    var collState = {};                 // rail folders toggled by hand: collection path → collapsed?
+    // Folders not listed use the default: only the first level starts expanded.
+    function isCollapsed(path) { return path in collState ? collState[path] : path.split('/').length >= 2; }
     try {
-      (JSON.parse(localStorage.getItem('p5front_gallery_collapsed')) || []).forEach(function (k) { collapsed[k] = true; });
+      var v = JSON.parse(localStorage.getItem('p5front_gallery_collapsed')) || {};
+      if (Array.isArray(v)) v.forEach(function (k) { collState[k] = true; }); else collState = v;
       facetSort = localStorage.getItem('p5front_gallery_facet_sort') || 'alpha';
     } catch (e) {}
-    function saveCollapsed() { try { localStorage.setItem('p5front_gallery_collapsed', JSON.stringify(Object.keys(collapsed))); } catch (e) {} }
+    function saveCollapsed() { try { localStorage.setItem('p5front_gallery_collapsed', JSON.stringify(collState)); } catch (e) {} }
 
     function collOf(p) { return p.collection || ''; }
     function inColl(p) {
@@ -261,7 +264,7 @@ function buildGalleryHtml() {
       keys.forEach(function (n) {
         var parts = n.split('/');
         // Hidden when any ancestor folder is collapsed.
-        for (var i = 1; i < parts.length; i++) if (collapsed[parts.slice(0, i).join('/')]) return;
+        for (var i = 1; i < parts.length; i++) if (isCollapsed(parts.slice(0, i).join('/'))) return;
         var kids = keys.some(function (m) { return m.indexOf(n + '/') === 0; });
         items.push({ label: parts[parts.length - 1], value: n, depth: parts.length, count: countUnder(n), kids: kids });
       });
@@ -271,7 +274,7 @@ function buildGalleryHtml() {
       rail.innerHTML = items.map(function (it, i) {
         var active = (it.value === activeColl) ? ' active' : '';
         var tg = it.kids === undefined ? ''
-          : it.kids ? '<span class="tg" data-tg="' + i + '" title="' + (collapsed[it.value] ? 'Expand' : 'Collapse') + '">' + (collapsed[it.value] ? '▸' : '▾') + '</span>'
+          : it.kids ? '<span class="tg" data-tg="' + i + '" title="' + (isCollapsed(it.value) ? 'Expand' : 'Collapse') + '">' + (isCollapsed(it.value) ? '▸' : '▾') + '</span>'
           : '<span class="tg"></span>';
         return '<button class="ri' + active + '" data-i="' + i + '" style="padding-left:' + (8 + it.depth * 14) + 'px">' +
                tg + '<span class="lb">' + esc(it.label) + '</span><span class="n">' + it.count + '</span></button>';
@@ -283,7 +286,7 @@ function buildGalleryHtml() {
         t.addEventListener('click', function (e) {
           e.stopPropagation();
           var k = railNodes[+t.dataset.tg].value;
-          if (collapsed[k]) delete collapsed[k]; else collapsed[k] = true;
+          collState[k] = !isCollapsed(k);
           saveCollapsed();
           renderRail();
         });
